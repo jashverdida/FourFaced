@@ -1,0 +1,6 @@
+.env
+__pycache__/
+*.pyc
+local_output/
+local_input/
+*.mp4

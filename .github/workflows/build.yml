@@ -1,0 +1,31 @@
+name: Build and smoke-test container
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build linux/amd64 image
+        run: docker buildx build --platform linux/amd64 --tag fourfaced:ci --load .
+
+      - name: Run container against example tasks
+        run: |
+          mkdir -p local_output
+          docker run --rm --platform linux/amd64 \
+            -v "$PWD/tests/sample_input:/input:ro" \
+            -v "$PWD/local_output:/output" \
+            -e FIREWORKS_API_KEY="${{ secrets.FIREWORKS_API_KEY }}" \
+            fourfaced:ci
+
+      - name: Validate output schema
+        run: python scripts/validate_output.py local_output/results.json tests/sample_input/tasks.json
+
+      - name: Show results
+        run: cat local_output/results.json

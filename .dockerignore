@@ -1,0 +1,12 @@
+.git
+.github
+.env
+.env.example
+__pycache__
+*.pyc
+local_output
+local_input
+*.mp4
+README.md
+tests
+scripts
