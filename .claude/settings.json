@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "PowerShell(git -C c:\\\\GitHub\\\\FourFaced add -A)"
-    ]
-  }
-}

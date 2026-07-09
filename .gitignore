@@ -4,3 +4,4 @@ __pycache__/
 local_output/
 local_input/
 *.mp4
+.claude/
