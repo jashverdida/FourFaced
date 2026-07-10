@@ -24,12 +24,14 @@
   const themeToggle = $("themeToggle");
 
   // ---------- Theme ----------
+  const themeLabel = $("themeLabel");
   const THEME_CYCLE = ["dark", "light"];
   const systemDefault = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
   let theme = localStorage.getItem("fourfaced-theme") || systemDefault;
   function applyTheme() {
     document.documentElement.setAttribute("data-theme", theme);
-    themeToggle.textContent = theme.toUpperCase();
+    themeToggle.setAttribute("aria-checked", String(theme === "dark"));
+    themeLabel.textContent = theme.toUpperCase();
   }
   themeToggle.addEventListener("click", () => {
     theme = THEME_CYCLE[(THEME_CYCLE.indexOf(theme) + 1) % THEME_CYCLE.length];

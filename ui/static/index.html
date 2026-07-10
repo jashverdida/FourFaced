@@ -16,7 +16,14 @@
           <path d="M12 6.7v14.1"/>
         </svg>
       </button>
-      <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle theme">AUTO</button>
+      <div class="theme-switch-wrap">
+        <button class="theme-switch" id="themeToggle" type="button" role="switch" aria-checked="true" aria-label="Switch between dark and light theme">
+          <span class="ts-stars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+          <span class="ts-cloud" aria-hidden="true"></span>
+          <span class="ts-knob" aria-hidden="true"></span>
+        </button>
+        <span class="theme-switch-label" id="themeLabel">DARK</span>
+      </div>
     </div>
   </header>
 
