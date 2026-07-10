@@ -185,7 +185,8 @@ STYLE_RESCUE_RESERVE = 7.0
 STYLE_THINK_MIN_BUDGET = 18.0
 
 
-def style_captions(facts: str, styles: list, deadline: float, strict: bool = False) -> tuple:
+def style_captions(facts: str, styles: list, deadline: float, strict: bool = False,
+                   allow_think: bool = True) -> tuple:
     """Style the grounded facts. Returns (captions_dict, used_thinking).
 
     Gemma 4's thinking is where drafts get checked against the facts, so a
@@ -194,7 +195,7 @@ def style_captions(facts: str, styles: list, deadline: float, strict: bool = Fal
     no-think rescue pass.
     """
     prompt = build_style_prompt(facts, styles, strict=strict)
-    if deadline - time.monotonic() >= STYLE_THINK_MIN_BUDGET:
+    if allow_think and deadline - time.monotonic() >= STYLE_THINK_MIN_BUDGET:
         try:
             raw = llm.generate(
                 STYLE_MODEL, [prompt],
@@ -210,6 +211,49 @@ def style_captions(facts: str, styles: list, deadline: float, strict: bool = Fal
         max_tokens=1024, temperature=0.85, think=False,
     )
     return extract_json(raw), False
+
+
+def missing_styles(captions, styles: list) -> list:
+    """Requested styles that lack a non-empty string caption."""
+    if not isinstance(captions, dict):
+        return list(styles)
+    return [s for s in styles
+            if not isinstance(captions.get(s), str) or not captions[s].strip()]
+
+
+_FACTS_LEADIN = re.compile(
+    r"^(the|this)\s+(clip|video|footage|scene)\s+"
+    r"(shows|features|depicts|captures|presents|opens\s+with)\s+", re.I)
+
+
+def _facts_subject(facts: str, max_len: int = 140) -> str:
+    """First sentence of the facts, without a 'The clip shows' lead-in."""
+    sentence = facts.strip().split(". ")[0].strip().rstrip(".")
+    sentence = _FACTS_LEADIN.sub("", sentence)
+    if len(sentence) > max_len:
+        sentence = sentence[:max_len].rsplit(" ", 1)[0].rstrip(",;:")
+    return sentence or "a short scene recorded on camera"
+
+
+def template_captions(facts: str, styles: list) -> dict:
+    """Deterministic captions built straight from the grounding facts.
+
+    Last rung of the ladder before generic captions — used when the styling
+    model is unavailable or the clip is out of time budget. Factual first,
+    lightly voiced per style.
+    """
+    subject = _facts_subject(facts)
+    upper = subject[0].upper() + subject[1:]
+    lower = subject[0].lower() + subject[1:]
+    templates = {
+        "formal": f"{upper}.",
+        "sarcastic": f"Oh look: {lower}. Groundbreaking content, truly.",
+        "humorous_tech": (f"Status update: {lower} — everything running "
+                          "smoothly, zero crashes reported."),
+        "humorous_non_tech": (f"And in today's episode of things that "
+                              f"happened: {lower}."),
+    }
+    return {s: templates.get(s, f"{upper}.") for s in styles}
 
 
 def process_task(task: dict) -> tuple:
@@ -243,8 +287,39 @@ def process_task(task: dict) -> tuple:
         meta["timings"]["ground_s"] = round(time.monotonic() - t2, 1)
 
     t3 = time.monotonic()
-    captions, used_thinking = style_captions(facts, styles, deadline)
-    meta["style_thinking"] = used_thinking
+    captions, meta["style_thinking"] = {}, False
+    try:
+        captions, meta["style_thinking"] = style_captions(facts, styles, deadline)
+    except Exception as e:
+        log.warning("Task %s: styling failed (%s)", meta["task_id"], e)
+
+    # Validation ladder: strict-JSON retry, then facts-derived templates, so
+    # every requested style always has a non-empty caption.
+    missing = missing_styles(captions, styles)
+    meta["strict_retry"] = False
+    if missing and deadline - time.monotonic() >= 10:
+        meta["strict_retry"] = True
+        log.warning("Task %s: styles %s missing/invalid; strict retry",
+                    meta["task_id"], missing)
+        try:
+            retry_captions, _ = style_captions(facts, styles, deadline,
+                                               strict=True, allow_think=False)
+            for s in missing_styles(captions, styles):
+                if s not in missing_styles(retry_captions, [s]):
+                    captions[s] = retry_captions[s]
+        except Exception as e:
+            log.warning("Task %s: strict retry failed (%s)", meta["task_id"], e)
+
+    still_missing = missing_styles(captions, styles)
+    meta["template_styles"] = still_missing
+    if still_missing:
+        log.warning("Task %s: filling styles %s from facts template",
+                    meta["task_id"], still_missing)
+        fills = template_captions(facts, still_missing)
+        for s in still_missing:
+            captions[s] = fills[s]
+
+    captions = {s: captions[s].strip() for s in styles}
     meta["timings"]["style_s"] = round(time.monotonic() - t3, 1)
     meta["timings"]["total_s"] = round(time.monotonic() - t0, 1)
     return captions, meta

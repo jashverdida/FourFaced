@@ -64,17 +64,14 @@ def process_tasks(tasks: list) -> tuple:
         meta = {"task_id": task_id}
         try:
             captions, meta = pipeline.process_task(task)
-            captions = {s: str(captions[s]).strip() for s in styles if isinstance(captions.get(s), str) and captions[s].strip()}
-            missing = [s for s in styles if s not in captions]
-            if missing:
-                log.warning("Task %s: styling missed styles %s; filling with fallback", task_id, missing)
-                for s in missing:
-                    captions[s] = fallback_captions([s])[s]
-            meta["fallback_used"] = bool(missing)
+            meta["fallback_used"] = bool(meta.get("template_styles"))
         except Exception:
-            log.exception("Task %s failed; emitting fallback captions", task_id)
+            # Pipeline failed before grounding produced facts (download,
+            # ffmpeg, or grounding itself) — generic captions, never a gap.
+            log.exception("Task %s failed; emitting generic fallback captions", task_id)
             captions = fallback_captions(styles)
             meta["fallback_used"] = True
+            meta["last_resort"] = True
         log.info("Task %s done in %.1fs (%d styles)",
                  task_id, time.monotonic() - started, len(captions))
         results.append({"task_id": task_id, "captions": captions})

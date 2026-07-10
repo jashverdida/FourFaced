@@ -56,7 +56,10 @@ def generate(model: str, contents, deadline: float, max_tokens: int = 2048,
     last_error = "unknown"
     for attempt in (1, 2, 3):
         remaining = deadline - time.monotonic()
-        if remaining < 5:
+        # The API enforces a minimum 10s request deadline, so any attempt with
+        # less budget than that could overshoot the clip deadline — refuse it
+        # and let the caller's fallbacks (which are local and instant) run.
+        if remaining < MIN_TIMEOUT_S:
             break
         try:
             resp = client().models.generate_content(
@@ -81,7 +84,7 @@ def generate(model: str, contents, deadline: float, max_tokens: int = 2048,
             if getattr(e, "code", None) not in RETRYABLE_CODES:
                 raise LLMError(f"generate({model}) failed: {last_error}") from e
             log.warning("Transient LLM error (attempt %d): %s", attempt, last_error)
-            time.sleep(min(1.5, max(0.0, deadline - time.monotonic() - 5)))
+            time.sleep(min(1.5, max(0.0, deadline - time.monotonic() - MIN_TIMEOUT_S)))
         except Exception as e:
             last_error = f"{type(e).__name__}: {str(e)[:200]}"
             log.warning("LLM call failed (attempt %d): %s", attempt, last_error)
