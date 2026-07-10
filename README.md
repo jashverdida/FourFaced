@@ -133,6 +133,23 @@ Alongside `results.json`, the container writes `fourfaced_debug.json` with the
 grounding facts, stage timings, and fallback flags per clip — the evidence
 behind every caption (the grading harness only reads `results.json`).
 
+## Results UI
+
+A local web UI for demoing the pipeline: drop in a clip (or pick one of the
+three official examples), watch real progress as it moves through grounding
+and styling, then see all four captions — each in its own typographic voice —
+next to the actual grounding facts that back them. Not part of the submission
+container; it's a separate Flask app that imports and runs the exact same
+`app/pipeline.py` code.
+
+```sh
+pip install -r ui/requirements.txt
+python ui/server.py
+```
+
+Open `http://localhost:5000`. Reads `GEMINI_API_KEY` the same way the
+container does (repo-root `.env`, or export it in your shell).
+
 ## Known limitations
 
 - **Discrete fast events on longer clips can fall between sampled frames.**

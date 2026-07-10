@@ -1,0 +1,57 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FourFaced</title>
+<link rel="stylesheet" href="/static/style.css">
+
+<div class="wrap">
+  <header class="header">
+    <div>
+      <h1 class="wordmark">Four<span>Faced</span></h1>
+      <p class="tagline">One clip. Four faces. Every caption backed by what's actually on screen.</p>
+    </div>
+    <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle theme">AUTO</button>
+  </header>
+
+  <section class="stage">
+    <label class="dropzone" id="dropzone" for="fileInput">
+      <p class="dropzone-title">Drop a clip here, or choose a file</p>
+      <p class="dropzone-sub" id="dropzoneSub">MP4, MOV, WebM — or try an example below</p>
+      <input type="file" id="fileInput" accept="video/*">
+    </label>
+
+    <div class="examples" id="examples"></div>
+
+    <div class="player-wrap" id="playerWrap">
+      <video id="player" controls playsinline></video>
+    </div>
+
+    <div class="controls">
+      <div class="style-toggles" id="styleToggles"></div>
+      <button class="run-btn" id="runBtn" type="button" disabled>Caption this clip</button>
+    </div>
+
+    <div class="progress-block" id="progressBlock">
+      <div class="progress-current" id="progressCurrent"></div>
+      <canvas id="signal" width="880" height="90"></canvas>
+      <ul class="stage-log" id="stageLog"></ul>
+    </div>
+
+    <div class="error-box" id="errorBox"></div>
+  </section>
+
+  <section class="results" id="results">
+    <p class="section-eyebrow">Four Voices</p>
+    <div class="result-meta" id="resultMeta"></div>
+    <div class="card-grid" id="cardGrid"></div>
+
+    <div class="evidence">
+      <p class="section-eyebrow">Evidence — what Gemma actually saw</p>
+      <p class="evidence-facts" id="evidenceFacts"></p>
+      <div class="evidence-flags" id="evidenceFlags"></div>
+    </div>
+  </section>
+
+  <p class="footer-note">FourFaced — Team VERPTO — AMD Developer Hackathon ACT II, Track 2</p>
+</div>
+
+<script src="/static/app.js"></script>
