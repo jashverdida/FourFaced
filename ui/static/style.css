@@ -495,10 +495,6 @@ video::-webkit-media-controls-timeline { display: none; }
   transform: scale(1.08);
 }
 
-.faces-picker {
-  margin-top: 1.4rem;
-  text-align: center;
-}
 .faces-picker-title {
   margin: 0 0 0.6rem;
   font-size: 0.8rem;
@@ -511,15 +507,17 @@ video::-webkit-media-controls-timeline { display: none; }
 
 .controls {
   display: flex;
-  justify-content: center;
-  margin-top: 1.1rem;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.4rem;
+  flex-wrap: wrap;
 }
 
 .style-toggles {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
-  justify-content: center;
 }
 .style-toggle {
   display: inline-flex;
