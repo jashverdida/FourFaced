@@ -319,11 +319,25 @@
     if (files.length) addClips(files.map((f) => ({ kind: "file", file: f, name: f.name })));
     fileInput.value = "";
   });
+  // Drag-and-drop works on the whole stage card: onto the dropzone while the
+  // batch is empty, and onto the carousel area to add more clips after that
+  // (the + Add clip button still works too).
+  const stageEl = document.querySelector(".stage");
+  const dragTarget = () => (clips.length ? carousel : dropzone);
   ["dragover", "dragenter"].forEach((evt) =>
-    dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.add("drag-over"); }));
-  ["dragleave", "drop"].forEach((evt) =>
-    dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.remove("drag-over"); }));
-  dropzone.addEventListener("drop", (e) => {
+    stageEl.addEventListener(evt, (e) => {
+      e.preventDefault();
+      dragTarget().classList.add("drag-over");
+    }));
+  stageEl.addEventListener("dragleave", (e) => {
+    if (e.relatedTarget && stageEl.contains(e.relatedTarget)) return;
+    dropzone.classList.remove("drag-over");
+    carousel.classList.remove("drag-over");
+  });
+  stageEl.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropzone.classList.remove("drag-over");
+    carousel.classList.remove("drag-over");
     const files = [...e.dataTransfer.files].filter((f) => f.type.startsWith("video/"));
     if (files.length) addClips(files.map((f) => ({ kind: "file", file: f, name: f.name })));
   });

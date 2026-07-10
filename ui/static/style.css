@@ -252,11 +252,18 @@ a { color: var(--accent); }
 .dropzone input[type="file"] { display: none; }
 .dropzone.hidden { display: none; }
 
+.examples-block { margin-top: 1.4rem; }
+.examples-hint {
+  margin: 0 0 0.6rem;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--ink-dim);
+}
 .examples {
   display: flex;
   gap: 0.6rem;
   flex-wrap: wrap;
-  margin-top: 1rem;
+  justify-content: center;
 }
 .example-pill {
   font-family: var(--mono);
@@ -276,6 +283,12 @@ a { color: var(--accent); }
 
 .carousel { display: none; margin-top: 1.25rem; }
 .carousel.visible { display: block; }
+/* Dropping files onto the stage while clips exist adds to the batch */
+.carousel.drag-over .carousel-stage {
+  outline: 1.5px dashed var(--accent);
+  outline-offset: 4px;
+  border-radius: 12px;
+}
 
 .carousel-stage {
   display: grid;

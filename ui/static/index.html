@@ -14,12 +14,10 @@
 
   <section class="stage">
     <label class="dropzone" id="dropzone" for="fileInput">
-      <p class="dropzone-title">Drop up to 4 clips here, or choose files</p>
-      <p class="dropzone-sub" id="dropzoneSub">MP4, MOV, WebM — or try an example below</p>
+      <p class="dropzone-title">Drop a clip here, or choose a file</p>
+      <p class="dropzone-sub" id="dropzoneSub">MP4, MOV, WebM — up to 4 clips</p>
       <input type="file" id="fileInput" accept="video/*" multiple>
     </label>
-
-    <div class="examples" id="examples"></div>
 
     <div class="carousel" id="carousel" aria-roledescription="carousel" aria-label="Uploaded clips">
       <div class="carousel-stage" id="carouselStage"></div>
@@ -31,6 +29,11 @@
       <div class="add-clip-row">
         <button class="add-clip-btn" id="addClipBtn" type="button">+ Add clip · 1/4</button>
       </div>
+    </div>
+
+    <div class="examples-block">
+      <p class="examples-hint">No clip handy? Try one of these samples.</p>
+      <div class="examples" id="examples"></div>
     </div>
 
     <div class="controls">
