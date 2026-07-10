@@ -1,0 +1,65 @@
+[
+  {
+    "task_id": "extra-clip1",
+    "captions": {
+      "formal": "An elderly couple engages in a card game at a wooden table in a brightly lit interior.",
+      "sarcastic": "A thrilling high-stakes card game is underway, featuring a tan fringed vest and a stationary camera.",
+      "humorous_tech": "The system is experiencing high latency as the user processes his next move before finally deploying a card to the table.",
+      "humorous_non_tech": "The vest is bringing the floral energy, but the card game is bringing the tension."
+    }
+  },
+  {
+    "task_id": "extra-clip2",
+    "captions": {
+      "formal": "A musician in a cowboy hat and purple vest performs with a hollow-body electric guitar by a riverside at sunset.",
+      "sarcastic": "A man in a purple vest plays guitar while a random passerby decides to audition for the role of foreground obstruction.",
+      "humorous_tech": "The performance was going smoothly until a human pop-up ad briefly interrupted the viewport.",
+      "humorous_non_tech": "The sunset is beautiful, the outfit is bold, and the stranger in the foreground is just checking if the guitar is actually plugged in."
+    }
+  },
+  {
+    "task_id": "extra-clip3",
+    "captions": {
+      "formal": "A first-person perspective shows a person's legs resting on a railing above moving turquoise water.",
+      "sarcastic": "Wow, someone put their feet on a railing. Truly a groundbreaking cinematic achievement.",
+      "humorous_tech": "Waiting for the scenery to finish buffering while my brain is still in sleep mode.",
+      "humorous_non_tech": "The water is moving fast, but my motivation to actually move my legs is at a complete standstill."
+    }
+  },
+  {
+    "task_id": "extra-clip4",
+    "captions": {
+      "formal": "A goalkeeper in a yellow shirt makes a save during a night match under stadium floodlights. Following the play, a group of players in orange shirts approaches the referee to discuss the action.",
+      "sarcastic": "A goalkeeper dives for a ball and some people in orange shirts walk toward a referee. Truly a cinematic masterpiece of athletic achievement.",
+      "humorous_tech": "The goalkeeper successfully patched a critical security vulnerability before the orange team attempted to submit a bug report to the referee.",
+      "humorous_non_tech": "The goalkeeper decided to take a nap on the grass, and the orange team rushed over to ask the referee if he was awake."
+    }
+  },
+  {
+    "task_id": "extra-clip5",
+    "captions": {
+      "formal": "Vehicles navigate a partially flooded city street during a heavy rainstorm.",
+      "sarcastic": "A stunning display of urban planning where the street doubles as a river.",
+      "humorous_tech": "The city's drainage system has encountered a critical bug and is currently unresponsive.",
+      "humorous_non_tech": "Who needs a car wash when the road provides a complimentary rinse with every commute?"
+    }
+  },
+  {
+    "task_id": "extra-clip6",
+    "captions": {
+      "formal": "An individual types on a silver laptop resting on their lap in an indoor setting.",
+      "sarcastic": "Riveting footage of someone pressing keys on a laptop. Truly a cinematic masterpiece.",
+      "humorous_tech": "POV: You're trying to fix one bug and accidentally creating ten more in the production environment.",
+      "humorous_non_tech": "The daring art of balancing a computer on your lap and hoping for the best."
+    }
+  },
+  {
+    "task_id": "extra-clip7",
+    "captions": {
+      "formal": "A person slices green onions on a wooden cutting board using a small knife.",
+      "sarcastic": "A thrilling cinematic masterpiece capturing the high-octane action of chopping a vegetable.",
+      "humorous_tech": "Executing a manual batch process to convert whole stalks into small-scale data points.",
+      "humorous_non_tech": "The green onions are getting a very aggressive haircut today."
+    }
+  }
+]

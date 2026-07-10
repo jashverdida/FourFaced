@@ -133,6 +133,18 @@ Alongside `results.json`, the container writes `fourfaced_debug.json` with the
 grounding facts, stage timings, and fallback flags per clip — the evidence
 behind every caption (the grading harness only reads `results.json`).
 
+## Known limitations
+
+- **Discrete fast events on longer clips can fall between sampled frames.**
+  Frame sampling follows the competition guide's cadence (roughly one frame
+  per 4-5 seconds, clamped to 6-15 frames), biased toward the denser end of
+  that range for longer clips. Even so, on a ~37s test clip containing a
+  scored goal and a referee card, grounding still missed the card entirely
+  and described the goal ambiguously. This is an inherent tradeoff of sparse
+  frame sampling on longer, fast-action clips (e.g. sports) rather than a bug;
+  going denser than the guide's cadence would trade clip-budget margin for
+  uncertain accuracy gains, so it hasn't been pushed further.
+
 ## Team
 
 **VERPTO** — Jashmine "Jash" Verdida & Eijay Pepito.

@@ -3,10 +3,10 @@
 The SDK reads GEMINI_API_KEY from the environment on its own. Both pipeline
 stages go through generate() so retry and deadline handling live in one place.
 
-Gemma 4 on the Gemini API always produces internal "thinking" tokens before
-its answer and does not accept a thinking config, so max_tokens here must
-leave room for thoughts + answer — a cap that is too small yields an empty
-response with finish_reason MAX_TOKENS.
+Gemma 4 on the Gemini API only exposes two thinkingLevel values: "minimal"
+(no reasoning tokens) and "high" (full reasoning, 15-40+ seconds even on
+short text-only prompts). There is no bounded middle ground, so callers pick
+a level rather than a token budget.
 """
 
 import logging
@@ -20,11 +20,6 @@ log = logging.getLogger("fourfaced.llm")
 RETRYABLE_CODES = {429, 500, 502, 503, 504}
 # The API rejects request deadlines under 10 seconds.
 MIN_TIMEOUT_S = 10.0
-
-# Prefilling the model turn with an empty think block suppresses Gemma 4's
-# thinking entirely (the hosted API exposes no thinking config for Gemma;
-# this mirrors the chat template's enable_thinking=False mechanism).
-NO_THINK_PREFILL = "<|think|><|/think|>"
 
 _client = None
 
@@ -44,14 +39,11 @@ def generate(model: str, contents, deadline: float, max_tokens: int = 2048,
              temperature: float = 0.7, think: bool = True) -> str:
     """One generate_content call, bounded by `deadline` (time.monotonic secs).
 
-    Retries transient errors while budget remains. think=False suppresses
-    Gemma's reasoning tokens for low-latency calls.
+    Retries transient errors while budget remains. think=False sets
+    thinkingLevel=minimal so no reasoning tokens are produced.
     """
-    parts = [types.Part(text=c) if isinstance(c, str) else c for c in contents]
-    request_contents = [types.Content(role="user", parts=parts)]
-    if not think:
-        request_contents.append(
-            types.Content(role="model", parts=[types.Part(text=NO_THINK_PREFILL)]))
+    request_contents = [types.Part(text=c) if isinstance(c, str) else c for c in contents]
+    thinking_config = types.ThinkingConfig(thinking_level="high" if think else "minimal")
 
     last_error = "unknown"
     for attempt in (1, 2, 3):
@@ -68,6 +60,7 @@ def generate(model: str, contents, deadline: float, max_tokens: int = 2048,
                 config=types.GenerateContentConfig(
                     temperature=temperature,
                     max_output_tokens=max_tokens,
+                    thinking_config=thinking_config,
                     http_options=types.HttpOptions(
                         timeout=int(max(MIN_TIMEOUT_S, remaining - 0.5) * 1000)),
                 ),

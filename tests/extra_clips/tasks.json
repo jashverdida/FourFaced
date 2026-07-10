@@ -1,0 +1,37 @@
+[
+  {
+    "task_id": "extra-clip1",
+    "video_url": "file:///c:/GitHub/FourFaced/tests/extra_clips/extra-clip1.mp4",
+    "styles": ["formal", "sarcastic", "humorous_tech", "humorous_non_tech"]
+  },
+  {
+    "task_id": "extra-clip2",
+    "video_url": "file:///c:/GitHub/FourFaced/tests/extra_clips/extra-cliip2.mp4",
+    "styles": ["formal", "sarcastic", "humorous_tech", "humorous_non_tech"]
+  },
+  {
+    "task_id": "extra-clip3",
+    "video_url": "file:///c:/GitHub/FourFaced/tests/extra_clips/extra-clip3.mp4",
+    "styles": ["formal", "sarcastic", "humorous_tech", "humorous_non_tech"]
+  },
+  {
+    "task_id": "extra-clip4",
+    "video_url": "file:///c:/GitHub/FourFaced/tests/extra_clips/extra-clip4.mp4",
+    "styles": ["formal", "sarcastic", "humorous_tech", "humorous_non_tech"]
+  },
+  {
+    "task_id": "extra-clip5",
+    "video_url": "file:///c:/GitHub/FourFaced/tests/extra_clips/extra-clip5.mp4",
+    "styles": ["formal", "sarcastic", "humorous_tech", "humorous_non_tech"]
+  },
+  {
+    "task_id": "extra-clip6",
+    "video_url": "file:///c:/GitHub/FourFaced/tests/extra_clips/extra-clip6.mp4",
+    "styles": ["formal", "sarcastic", "humorous_tech", "humorous_non_tech"]
+  },
+  {
+    "task_id": "extra-clip7",
+    "video_url": "file:///c:/GitHub/FourFaced/tests/extra_clips/extra-clip7.mp4",
+    "styles": ["formal", "sarcastic", "humorous_tech", "humorous_non_tech"]
+  }
+]

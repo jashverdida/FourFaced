@@ -1,0 +1,20 @@
+[
+  {
+    "task_id": "extra-clip4",
+    "facts": "The clip takes place at night on a grass soccer field in a stadium with blue, white, and yellow seating. A goalkeeper in a yellow shirt and blue pants stands near a goal. Several players in orange shirts and a referee in a blue shirt are on the field. Initially, the players and referee are stationary, but the action progresses as a player in orange kicks a ball toward the goal. The goalkeeper catches the ball, and the players in orange celebrate by hugging and running across the field. A man in a white shirt and jeans also enters the field. The camera remains stationary throughout the clip, capturing the scene from a wide side-angle.",
+    "timings": {
+      "download_s": 0.0,
+      "frames_s": 2.7,
+      "ground_s": 9.1,
+      "style_s": 5.3,
+      "total_s": 17.1
+    },
+    "video_bytes": 27245702,
+    "duration_s": 37.5,
+    "frame_count": 10,
+    "strict_retry": false,
+    "template_styles": [],
+    "style_thinking": false,
+    "fallback_used": false
+  }
+]

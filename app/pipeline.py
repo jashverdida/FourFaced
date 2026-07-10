@@ -7,11 +7,14 @@ harness's 30-second per-clip limit.
 import glob
 import json
 import logging
+import math
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import time
+import urllib.parse
 
 import requests
 from google.genai import types
@@ -58,6 +61,19 @@ class ClipError(Exception):
 
 
 def download_video(url: str, dest: str, deadline: float) -> int:
+    # file:// URIs are supported for local testing (e.g. tests/extra_clips)
+    # so the same code path exercises local and remote clips alike; the real
+    # competition harness only ever supplies http(s) URLs.
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme == "file":
+        src = urllib.parse.unquote(parsed.path)
+        if os.name == "nt" and src.startswith("/") and len(src) > 2 and src[2] == ":":
+            src = src[1:]
+        size = os.path.getsize(src)
+        if size > MAX_DOWNLOAD_BYTES:
+            raise ClipError(f"Video exceeds {MAX_DOWNLOAD_BYTES} bytes")
+        shutil.copyfile(src, dest)
+        return size
     try:
         with requests.get(url, stream=True, timeout=(5, 10)) as r:
             r.raise_for_status()
@@ -90,7 +106,11 @@ def probe_duration(path: str) -> float:
 
 def sample_frames(path: str, duration: float, out_dir: str, deadline: float) -> list:
     # Roughly one frame every 4-5 seconds, clamped to 6..15 frames total.
-    n = max(6, min(15, round(duration / 4.5)))
+    # Biased to the dense end of that cadence (ceil at ~4s rather than round
+    # at 4.5s) so longer clips get more samples — discrete fast events (a
+    # goal, a card) are more likely to land in a frame. Short clips are
+    # unaffected: they already sit at the 6-frame floor either way.
+    n = max(6, min(15, math.ceil(duration / 4.0)))
     fps = n / max(duration, 0.1)
     pattern = os.path.join(out_dir, "frame_%02d.jpg")
     timeout = max(3.0, deadline - time.monotonic() - LLM_RESERVE)
