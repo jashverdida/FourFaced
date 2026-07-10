@@ -14,26 +14,22 @@
 
   <section class="stage">
     <label class="dropzone" id="dropzone" for="fileInput">
-      <p class="dropzone-title">Drop a clip here, or choose a file</p>
+      <p class="dropzone-title">Drop up to 4 clips here, or choose files</p>
       <p class="dropzone-sub" id="dropzoneSub">MP4, MOV, WebM — or try an example below</p>
-      <input type="file" id="fileInput" accept="video/*">
+      <input type="file" id="fileInput" accept="video/*" multiple>
     </label>
 
     <div class="examples" id="examples"></div>
 
-    <div class="player-wrap" id="playerWrap">
-      <video id="player" controls playsinline></video>
-      <button class="clear-btn" id="clearBtn" type="button" aria-label="Remove clip">&times;</button>
-      <div class="video-progress" id="videoProgress" role="slider" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
-        <div class="video-progress-track">
-          <div class="video-progress-buffered" id="progressBuffered"></div>
-          <div class="video-progress-fill" id="progressFill"></div>
-          <div class="video-progress-thumb" id="progressThumb"></div>
-        </div>
-        <div class="video-progress-time">
-          <span id="progressCurrentTime">0:00</span>
-          <span id="progressDuration">0:00</span>
-        </div>
+    <div class="carousel" id="carousel" aria-roledescription="carousel" aria-label="Uploaded clips">
+      <div class="carousel-stage" id="carouselStage"></div>
+      <div class="carousel-nav">
+        <button class="carousel-arrow" id="prevBtn" type="button" aria-label="Previous clip">&#8592;</button>
+        <div class="carousel-dots" id="carouselDots"></div>
+        <button class="carousel-arrow" id="nextBtn" type="button" aria-label="Next clip">&#8594;</button>
+      </div>
+      <div class="add-clip-row">
+        <button class="add-clip-btn" id="addClipBtn" type="button">+ Add clip · 1/4</button>
       </div>
     </div>
 
@@ -83,7 +79,7 @@
   </section>
 
   <section class="results" id="results">
-    <p class="section-eyebrow">Four Voices</p>
+    <p class="section-eyebrow">Four Voices<span class="result-clip-name" id="resultClipName"></span></p>
     <div class="result-meta" id="resultMeta"></div>
     <div class="card-grid" id="cardGrid"></div>
 

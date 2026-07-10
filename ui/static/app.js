@@ -8,17 +8,19 @@
     { key: "humorous_non_tech", label: "Humorous — Everyday", cls: "everyday", var: "--voice-everyday", speech: { rate: 1.1, pitch: 1.18 } },
   ];
 
+  const MAX_CLIPS = 4;
+
   const $ = (id) => document.getElementById(id);
-  const dropzone = $("dropzone"), fileInput = $("fileInput"), dropzoneSub = $("dropzoneSub");
-  const dropzoneDefaultText = dropzoneSub.textContent;
-  const examplesEl = $("examples"), playerWrap = $("playerWrap"), player = $("player"), clearBtn = $("clearBtn");
-  const videoProgress = $("videoProgress"), progressTrack = videoProgress.querySelector(".video-progress-track");
-  const progressFill = $("progressFill"), progressBuffered = $("progressBuffered"), progressThumb = $("progressThumb");
-  const progressCurrentTime = $("progressCurrentTime"), progressDuration = $("progressDuration");
+  const dropzone = $("dropzone"), fileInput = $("fileInput");
+  const examplesEl = $("examples");
+  const carousel = $("carousel"), carouselStage = $("carouselStage");
+  const prevBtn = $("prevBtn"), nextBtn = $("nextBtn"), carouselDots = $("carouselDots");
+  const addClipBtn = $("addClipBtn");
   const styleToggles = $("styleToggles"), runBtn = $("runBtn");
   const progressBlock = $("progressBlock"), progressCurrent = $("progressCurrent"), stageLog = $("stageLog");
   const errorBox = $("errorBox"), results = $("results"), resultMeta = $("resultMeta");
   const cardGrid = $("cardGrid"), evidenceFacts = $("evidenceFacts"), evidenceFlags = $("evidenceFlags");
+  const resultClipName = $("resultClipName");
   const themeToggle = $("themeToggle");
 
   // ---------- Theme ----------
@@ -46,131 +48,284 @@
   function selectedStyles() {
     return [...styleToggles.querySelectorAll("input:checked")].map((i) => i.dataset.style);
   }
-  styleToggles.addEventListener("change", updateRunEnabled);
+  styleToggles.addEventListener("change", () => updateChrome());
 
-  // ---------- Custom video progress bar ----------
+  // ---------- Batch of clips (character-select carousel) ----------
+  // Up to MAX_CLIPS clips; the focused one sits center stage at full size,
+  // immediate neighbours stand dimmed at the edges of the spotlight, and the
+  // whole set slides over with eased motion when focus moves.
+  let clips = []; // { id, kind: 'file'|'example', file?, url?, name, objectUrl, status, result, runStyles, slideEl, videoEl }
+  let focusIdx = 0;
+  let isRunning = false;
+  let idCounter = 0;
+
   function formatTime(s) {
     if (!isFinite(s) || s < 0) return "0:00";
     const m = Math.floor(s / 60);
     const sec = Math.floor(s % 60);
     return `${m}:${String(sec).padStart(2, "0")}`;
   }
-  function updateVideoProgress() {
-    const duration = player.duration;
-    const pct = duration ? (player.currentTime / duration) * 100 : 0;
-    progressFill.style.width = `${pct}%`;
-    progressThumb.style.left = `${pct}%`;
-    progressCurrentTime.textContent = formatTime(player.currentTime);
-    progressDuration.textContent = formatTime(duration || 0);
-    videoProgress.setAttribute("aria-valuenow", String(Math.round(pct)));
-    if (player.buffered.length && duration) {
-      const bufEnd = player.buffered.end(player.buffered.length - 1);
-      progressBuffered.style.width = `${Math.min(100, (bufEnd / duration) * 100)}%`;
+
+  // Per-slide seek bar: same behaviour as the old single-player bar, scoped
+  // to this slide's own elements (class-based, no page-global IDs).
+  function wireSlideMedia(clip) {
+    const video = clip.videoEl;
+    const vp = clip.slideEl.querySelector(".video-progress");
+    const track = vp.querySelector(".video-progress-track");
+    const fill = vp.querySelector(".video-progress-fill");
+    const buffered = vp.querySelector(".video-progress-buffered");
+    const thumb = vp.querySelector(".video-progress-thumb");
+    const cur = vp.querySelector(".vp-current");
+    const dur = vp.querySelector(".vp-duration");
+
+    function update() {
+      const duration = video.duration;
+      const pct = duration ? (video.currentTime / duration) * 100 : 0;
+      fill.style.width = `${pct}%`;
+      thumb.style.left = `${pct}%`;
+      cur.textContent = formatTime(video.currentTime);
+      dur.textContent = formatTime(duration || 0);
+      vp.setAttribute("aria-valuenow", String(Math.round(pct)));
+      if (video.buffered.length && duration) {
+        const bufEnd = video.buffered.end(video.buffered.length - 1);
+        buffered.style.width = `${Math.min(100, (bufEnd / duration) * 100)}%`;
+      } else {
+        buffered.style.width = "0%";
+      }
+    }
+    ["timeupdate", "progress", "loadedmetadata", "durationchange"].forEach((evt) =>
+      video.addEventListener(evt, update));
+
+    function seekFromClientX(clientX) {
+      const rect = track.getBoundingClientRect();
+      const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+      if (video.duration) {
+        video.currentTime = ratio * video.duration;
+        update();
+      }
+    }
+    let dragging = false;
+    track.addEventListener("pointerdown", (e) => {
+      dragging = true;
+      vp.classList.add("dragging");
+      track.setPointerCapture(e.pointerId);
+      seekFromClientX(e.clientX);
+    });
+    track.addEventListener("pointermove", (e) => { if (dragging) seekFromClientX(e.clientX); });
+    ["pointerup", "pointercancel"].forEach((evt) =>
+      track.addEventListener(evt, () => {
+        dragging = false;
+        vp.classList.remove("dragging");
+      }));
+    vp.addEventListener("keydown", (e) => {
+      if (!video.duration) return;
+      const step = video.duration * 0.02;
+      if (e.key === "ArrowRight") {
+        e.stopPropagation();
+        video.currentTime = Math.min(video.duration, video.currentTime + step);
+        update();
+      } else if (e.key === "ArrowLeft") {
+        e.stopPropagation();
+        video.currentTime = Math.max(0, video.currentTime - step);
+        update();
+      }
+    });
+  }
+
+  function buildSlide(clip) {
+    const slide = document.createElement("div");
+    slide.className = "clip-slide";
+    slide.innerHTML = `
+      <div class="clip-frame">
+        <video controls playsinline preload="metadata"></video>
+        <button class="clear-btn" type="button" aria-label="Remove clip">&times;</button>
+        <span class="clip-status" hidden></span>
+      </div>
+      <div class="video-progress" role="slider" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+        <div class="video-progress-track">
+          <div class="video-progress-buffered"></div>
+          <div class="video-progress-fill"></div>
+          <div class="video-progress-thumb"></div>
+        </div>
+        <div class="video-progress-time"><span class="vp-current">0:00</span><span class="vp-duration">0:00</span></div>
+      </div>
+      <p class="clip-slide-name"></p>
+    `;
+    slide.querySelector(".clip-slide-name").textContent = clip.name;
+    const video = slide.querySelector("video");
+    if (clip.kind === "file") {
+      clip.objectUrl = URL.createObjectURL(clip.file);
+      video.src = clip.objectUrl;
     } else {
-      progressBuffered.style.width = "0%";
+      video.src = clip.url;
     }
-  }
-  function resetVideoProgress() {
-    progressFill.style.width = "0%";
-    progressThumb.style.left = "0%";
-    progressBuffered.style.width = "0%";
-    progressCurrentTime.textContent = "0:00";
-    progressDuration.textContent = "0:00";
-    videoProgress.setAttribute("aria-valuenow", "0");
-  }
-  ["timeupdate", "progress", "loadedmetadata", "durationchange"].forEach((evt) =>
-    player.addEventListener(evt, updateVideoProgress));
+    clip.videoEl = video;
+    clip.slideEl = slide;
+    wireSlideMedia(clip);
 
-  function seekFromClientX(clientX) {
-    const rect = progressTrack.getBoundingClientRect();
-    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-    if (player.duration) {
-      player.currentTime = ratio * player.duration;
-      updateVideoProgress();
+    slide.addEventListener("click", () => {
+      const idx = clips.indexOf(clip);
+      if (idx !== -1 && idx !== focusIdx) focusClip(idx);
+    });
+    slide.querySelector(".clear-btn").addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      removeClip(clip.id);
+    });
+    return slide;
+  }
+
+  // Transient warning that auto-clears (unlike showError, which sticks).
+  function showNotice(msg) {
+    errorBox.textContent = msg;
+    errorBox.classList.add("visible");
+    setTimeout(() => {
+      if (errorBox.textContent === msg) errorBox.classList.remove("visible");
+    }, 3500);
+  }
+
+  function addClips(items) {
+    if (isRunning) return;
+    const slots = MAX_CLIPS - clips.length;
+    if (items.length > slots) {
+      showNotice(slots > 0
+        ? `The batch is capped at ${MAX_CLIPS} clips — added the first ${slots}.`
+        : `The batch is capped at ${MAX_CLIPS} clips. Remove one to add another.`);
     }
+    items.slice(0, slots).forEach((init) => {
+      const clip = { id: `c${++idCounter}`, status: "ready", result: null, runStyles: null, objectUrl: null, ...init };
+      carouselStage.appendChild(buildSlide(clip));
+      clips.push(clip);
+    });
+    if (clips.length) focusClip(clips.length - 1, { force: true });
+    updateChrome();
   }
-  let draggingProgress = false;
-  progressTrack.addEventListener("pointerdown", (e) => {
-    draggingProgress = true;
-    videoProgress.classList.add("dragging");
-    progressTrack.setPointerCapture(e.pointerId);
-    seekFromClientX(e.clientX);
-  });
-  progressTrack.addEventListener("pointermove", (e) => { if (draggingProgress) seekFromClientX(e.clientX); });
-  ["pointerup", "pointercancel"].forEach((evt) =>
-    progressTrack.addEventListener(evt, () => {
-      draggingProgress = false;
-      videoProgress.classList.remove("dragging");
-    }));
-  videoProgress.addEventListener("keydown", (e) => {
-    if (!player.duration) return;
-    const step = player.duration * 0.02;
-    if (e.key === "ArrowRight") { player.currentTime = Math.min(player.duration, player.currentTime + step); updateVideoProgress(); }
-    else if (e.key === "ArrowLeft") { player.currentTime = Math.max(0, player.currentTime - step); updateVideoProgress(); }
-  });
 
-  // ---------- Source selection ----------
-  let source = null; // { type: 'file', file } | { type: 'example', url, label }
-  let objectUrl = null;
-
-  function setSource(next) {
-    source = next;
+  function removeClip(id) {
+    if (isRunning) return;
+    const idx = clips.findIndex((c) => c.id === id);
+    if (idx === -1) return;
+    const clip = clips[idx];
     stopSpeaking();
-    resetVideoProgress();
-    results.classList.remove("visible");
-    progressBlock.classList.remove("visible");
-    errorBox.classList.remove("visible");
-    if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
-
-    if (source.type === "file") {
-      objectUrl = URL.createObjectURL(source.file);
-      player.src = objectUrl;
-      dropzoneSub.textContent = source.file.name;
+    clip.videoEl.pause();
+    if (clip.objectUrl) URL.revokeObjectURL(clip.objectUrl);
+    clip.slideEl.remove();
+    clips.splice(idx, 1);
+    if (clips.length === 0) {
+      focusIdx = 0;
+      results.classList.remove("visible");
+      progressBlock.classList.remove("visible");
+      errorBox.classList.remove("visible");
+      fileInput.value = "";
+      updateChrome();
     } else {
-      player.src = source.url;
-      dropzoneSub.textContent = `Example: ${source.label}`;
+      focusClip(Math.min(idx, clips.length - 1), { force: true });
+      updateChrome();
     }
-    playerWrap.classList.add("visible");
-    dropzone.classList.add("hidden");
-    [...examplesEl.children].forEach((el) =>
-      el.classList.toggle("active", source.type === "example" && el.dataset.url === source.url));
-    updateRunEnabled();
   }
 
-  function clearSource() {
-    source = null;
+  function focusClip(idx, opts = {}) {
+    if (!clips.length) return;
+    idx = Math.max(0, Math.min(clips.length - 1, idx));
+    if (idx === focusIdx && !opts.force) return;
+    const prev = clips[focusIdx];
+    if (prev && prev.videoEl && idx !== focusIdx) prev.videoEl.pause();
     stopSpeaking();
-    if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
-    player.pause();
-    player.removeAttribute("src");
-    player.load();
-    resetVideoProgress();
-    playerWrap.classList.remove("visible");
-    dropzone.classList.remove("hidden");
-    fileInput.value = "";
-    dropzoneSub.textContent = dropzoneDefaultText;
-    [...examplesEl.children].forEach((el) => el.classList.remove("active"));
-    results.classList.remove("visible");
-    progressBlock.classList.remove("visible");
-    errorBox.classList.remove("visible");
-    updateRunEnabled();
+    focusIdx = idx;
+    layoutCarousel();
+    renderFocusedResults();
+    updateChrome();
   }
-  clearBtn.addEventListener("click", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    clearSource();
+
+  function layoutCarousel() {
+    clips.forEach((clip, i) => {
+      const off = i - focusIdx;
+      const el = clip.slideEl;
+      el.classList.toggle("focused", off === 0);
+      el.style.zIndex = String(10 - Math.abs(off));
+      if (off === 0) {
+        el.style.transform = "translateX(0) scale(1) rotateY(0deg)";
+        el.style.opacity = "1";
+      } else if (Math.abs(off) === 1) {
+        el.style.transform = `translateX(${off * 58}%) scale(0.78) rotateY(${off * -9}deg)`;
+        el.style.opacity = "1";
+      } else {
+        el.style.transform = `translateX(${off * 116}%) scale(0.6) rotateY(${off * -9}deg)`;
+        el.style.opacity = "0";
+      }
+      el.style.pointerEvents = Math.abs(off) > 1 ? "none" : "";
+    });
+  }
+
+  function setClipStatus(clip, status, tooltip) {
+    clip.status = status;
+    const badge = clip.slideEl.querySelector(".clip-status");
+    const labels = { queued: "QUEUED", running: "CAPTIONING…", done: "DONE", error: "FAILED" };
+    if (labels[status]) {
+      badge.hidden = false;
+      badge.textContent = labels[status];
+      badge.className = `clip-status ${status}`;
+      badge.title = tooltip || "";
+    } else {
+      badge.hidden = true;
+      badge.className = "clip-status";
+    }
+  }
+
+  function updateChrome() {
+    const hasClips = clips.length > 0;
+    dropzone.classList.toggle("hidden", hasClips);
+    carousel.classList.toggle("visible", hasClips);
+    carousel.classList.toggle("single", clips.length === 1);
+    carousel.classList.toggle("locked", isRunning);
+
+    carouselDots.innerHTML = "";
+    clips.forEach((c, i) => {
+      const dot = document.createElement("button");
+      dot.type = "button";
+      dot.className = `carousel-dot${i === focusIdx ? " active" : ""}`;
+      dot.setAttribute("aria-label", `Go to ${c.name}`);
+      dot.addEventListener("click", () => focusClip(i));
+      carouselDots.appendChild(dot);
+    });
+    prevBtn.disabled = focusIdx === 0;
+    nextBtn.disabled = focusIdx >= clips.length - 1;
+
+    const full = clips.length >= MAX_CLIPS;
+    addClipBtn.disabled = full || isRunning;
+    addClipBtn.textContent = full
+      ? `Batch full · ${clips.length}/${MAX_CLIPS}`
+      : `+ Add clip · ${clips.length}/${MAX_CLIPS}`;
+
+    [...examplesEl.children].forEach((pill) =>
+      pill.classList.toggle("active",
+        clips.some((c) => c.kind === "example" && c.url === pill.dataset.url)));
+
+    runBtn.textContent = clips.length > 1 ? `Caption ${clips.length} clips` : "Caption this clip";
+    runBtn.disabled = isRunning || !hasClips || selectedStyles().length === 0;
+  }
+
+  prevBtn.addEventListener("click", () => focusClip(focusIdx - 1));
+  nextBtn.addEventListener("click", () => focusClip(focusIdx + 1));
+  carousel.addEventListener("keydown", (e) => {
+    if (e.target.closest('.video-progress, [contenteditable="true"]')) return;
+    if (e.key === "ArrowLeft") { e.preventDefault(); focusClip(focusIdx - 1); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); focusClip(focusIdx + 1); }
   });
 
+  addClipBtn.addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", () => {
-    if (fileInput.files[0]) setSource({ type: "file", file: fileInput.files[0] });
+    const files = [...fileInput.files].filter((f) => f.type.startsWith("video/"));
+    if (files.length) addClips(files.map((f) => ({ kind: "file", file: f, name: f.name })));
+    fileInput.value = "";
   });
   ["dragover", "dragenter"].forEach((evt) =>
     dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.add("drag-over"); }));
   ["dragleave", "drop"].forEach((evt) =>
     dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.remove("drag-over"); }));
   dropzone.addEventListener("drop", (e) => {
-    const file = e.dataTransfer.files[0];
-    if (file) setSource({ type: "file", file });
+    const files = [...e.dataTransfer.files].filter((f) => f.type.startsWith("video/"));
+    if (files.length) addClips(files.map((f) => ({ kind: "file", file: f, name: f.name })));
   });
 
   fetch("/api/examples").then((r) => r.json()).then((examples) => {
@@ -180,14 +335,14 @@
       btn.type = "button";
       btn.textContent = ex.label;
       btn.dataset.url = ex.url;
-      btn.addEventListener("click", () => setSource({ type: "example", url: ex.url, label: ex.label }));
+      btn.addEventListener("click", () => {
+        const existing = clips.findIndex((c) => c.kind === "example" && c.url === ex.url);
+        if (existing !== -1) focusClip(existing);
+        else addClips([{ kind: "example", url: ex.url, name: `Example: ${ex.label}` }]);
+      });
       examplesEl.appendChild(btn);
     });
   }).catch(() => {});
-
-  function updateRunEnabled() {
-    runBtn.disabled = !source || selectedStyles().length === 0;
-  }
 
   // ---------- Signal-split canvas ----------
   const canvas = $("signal");
@@ -267,8 +422,8 @@
   }
   setSignalState("idle");
 
-  // ---------- Run ----------
-  runBtn.addEventListener("click", runPipeline);
+  // ---------- Run (sequential batch over the carousel) ----------
+  runBtn.addEventListener("click", runBatch);
 
   function logStage(label) {
     const li = document.createElement("li");
@@ -277,56 +432,89 @@
     stageLog.scrollTop = stageLog.scrollHeight;
   }
 
-  async function runPipeline() {
-    stopSpeaking();
-    const styles = selectedStyles();
-    runBtn.disabled = true;
-    results.classList.remove("visible");
-    errorBox.classList.remove("visible");
-    stageLog.innerHTML = "";
-    progressBlock.classList.add("visible");
-    progressCurrent.innerHTML = '<span class="dot"></span> Uploading…';
-    setSignalState("processing");
+  // Uploads + streams one clip through the pipeline. Resolves with the
+  // "done" payload, or rejects with an Error (marked .fatal when the whole
+  // server is unreachable, vs. a single clip failing mid-run).
+  function runOne(clip, styles, onStage) {
+    return new Promise((resolve, reject) => {
+      (async () => {
+        try {
+          const form = new FormData();
+          if (clip.kind === "file") form.append("video", clip.file);
+          else form.append("example_url", clip.url);
 
-    try {
-      const form = new FormData();
-      if (source.type === "file") form.append("video", source.file);
-      else form.append("example_url", source.url);
+          const uploadRes = await fetch("/api/upload", { method: "POST", body: form });
+          const uploadData = await uploadRes.json();
+          if (!uploadRes.ok) throw new Error(uploadData.error || "Upload failed");
 
-      const uploadRes = await fetch("/api/upload", { method: "POST", body: form });
-      const uploadData = await uploadRes.json();
-      if (!uploadRes.ok) throw new Error(uploadData.error || "Upload failed");
-
-      const es = new EventSource(`/api/run/${uploadData.job_id}?styles=${encodeURIComponent(styles.join(","))}`);
-
-      es.addEventListener("stage", (e) => {
-        const data = JSON.parse(e.data);
-        progressCurrent.innerHTML = `<span class="dot"></span> ${data.label}`;
-        logStage(data.label);
-      });
-
-      es.addEventListener("done", (e) => {
-        es.close();
-        const data = JSON.parse(e.data);
-        setSignalState("splitting");
-        renderResults(data, styles);
-        updateRunEnabled();
-      });
-
-      es.onerror = () => {
-        es.close();
-        if (!results.classList.contains("visible")) {
-          showError("Lost connection to the FourFaced server mid-run. Check the terminal running ui/server.py and try again.");
+          const es = new EventSource(`/api/run/${uploadData.job_id}?styles=${encodeURIComponent(styles.join(","))}`);
+          es.addEventListener("stage", (e) => onStage(JSON.parse(e.data).label));
+          es.addEventListener("done", (e) => { es.close(); resolve(JSON.parse(e.data)); });
+          es.onerror = () => {
+            es.close();
+            reject(new Error(`Lost connection to the FourFaced server while captioning "${clip.name}".`));
+          };
+        } catch (err) {
+          const fatal = err instanceof TypeError;
+          const message = fatal
+            ? "Can't reach the FourFaced server. Make sure ui/server.py is running (python ui/server.py), then try again."
+            : (err.message || String(err));
+          const wrapped = new Error(message);
+          wrapped.fatal = fatal;
+          reject(wrapped);
         }
-        updateRunEnabled();
-      };
-    } catch (err) {
-      const msg = err instanceof TypeError
-        ? "Can't reach the FourFaced server. Make sure ui/server.py is running (python ui/server.py), then try again."
-        : err.message || String(err);
-      showError(msg);
-      updateRunEnabled();
+      })();
+    });
+  }
+
+  async function runBatch() {
+    const styles = selectedStyles();
+    if (!clips.length || !styles.length || isRunning) return;
+
+    stopSpeaking();
+    isRunning = true;
+    errorBox.classList.remove("visible");
+    clips.forEach((c) => {
+      c.result = null;
+      setClipStatus(c, "queued");
+    });
+    renderFocusedResults();
+    updateChrome();
+    progressBlock.classList.add("visible");
+
+    for (let i = 0; i < clips.length; i++) {
+      const clip = clips[i];
+      focusClip(i, { force: true });
+      setClipStatus(clip, "running");
+      stageLog.innerHTML = "";
+      const prefix = clips.length > 1 ? `Clip ${i + 1} of ${clips.length} — ` : "";
+      progressCurrent.innerHTML = `<span class="dot"></span> ${prefix}Uploading…`;
+      setSignalState("processing");
+
+      try {
+        const data = await runOne(clip, styles, (label) => {
+          progressCurrent.innerHTML = `<span class="dot"></span> ${prefix}${label}`;
+          logStage(label);
+        });
+        clip.result = data;
+        clip.runStyles = styles;
+        setClipStatus(clip, "done");
+        setSignalState("splitting");
+        progressCurrent.innerHTML = `<span class="dot"></span> ${prefix}Done in ${data.total_s ?? "?"}s`;
+        renderFocusedResults();
+      } catch (err) {
+        setClipStatus(clip, "error", err.message);
+        if (err.fatal) {
+          showError(err.message);
+          break;
+        }
+        logStage(`failed: ${err.message}`);
+      }
     }
+
+    isRunning = false;
+    progressBlock.classList.remove("visible");
+    updateChrome();
   }
 
   // ---------- Text-to-speech ----------
@@ -375,8 +563,23 @@
     setSignalState("idle");
   }
 
-  function renderResults(data, requestedStyles) {
-    progressCurrent.innerHTML = `<span class="dot"></span> Done in ${data.total_s ?? "?"}s`;
+  // ---------- Results (always the focused clip's) ----------
+  function renderFocusedResults() {
+    const clip = clips[focusIdx];
+    if (!clip || !clip.result) {
+      results.classList.remove("visible");
+      return;
+    }
+    renderResults(clip);
+    results.classList.remove("swap");
+    void results.offsetWidth; // restart the swap animation
+    results.classList.add("swap");
+  }
+
+  function renderResults(clip) {
+    const data = clip.result;
+    const requestedStyles = clip.runStyles || STYLE_META.map((s) => s.key);
+    resultClipName.textContent = clips.length > 1 ? ` — ${clip.name}` : "";
 
     resultMeta.innerHTML = "";
     const metaItems = [
@@ -460,6 +663,7 @@
       function commitEdit() {
         const next = captionEl.textContent.trim();
         savedText = next.length ? next : savedText;
+        data.captions[s.key] = savedText; // persist across focus switches
         captionEl.textContent = savedText;
         captionEl.removeAttribute("contenteditable");
         captionEl.classList.remove("editing");
@@ -509,6 +713,7 @@
     });
 
     results.classList.add("visible");
-    progressBlock.classList.remove("visible");
   }
+
+  updateChrome();
 })();

@@ -272,10 +272,133 @@ a { color: var(--accent); }
 .example-pill:hover { color: var(--ink); border-color: var(--ink-faint); }
 .example-pill.active { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
 
-.player-wrap { position: relative; margin-top: 1.25rem; display: none; }
-.player-wrap.visible { display: block; }
+/* ---------- Clip carousel (character-select style) ---------- */
+
+.carousel { display: none; margin-top: 1.25rem; }
+.carousel.visible { display: block; }
+
+.carousel-stage {
+  display: grid;
+  place-items: center;
+  perspective: 1200px;
+  overflow: hidden;
+}
+
+.clip-slide {
+  grid-area: 1 / 1;
+  width: 68%;
+  transition:
+    transform 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+    filter 0.5s ease;
+}
+/* Side clips: pulled back, dimmed, standing just outside the spotlight. */
+.clip-slide:not(.focused) {
+  cursor: pointer;
+  filter: brightness(0.5) saturate(0.8);
+}
+.clip-slide:not(.focused) video { pointer-events: none; }
+.clip-slide:not(.focused) .clear-btn { display: none; }
+.clip-slide:not(.focused) .video-progress { visibility: hidden; }
+.carousel.locked .clear-btn { display: none; }
+
+.clip-frame { position: relative; }
+
+.clip-status {
+  position: absolute;
+  top: 0.6rem;
+  left: 0.6rem;
+  z-index: 2;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(10, 14, 22, 0.72);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+.clip-status.queued { color: rgba(255, 255, 255, 0.65); }
+.clip-status.running { border-color: var(--accent); color: var(--accent); }
+.clip-status.done { border-color: var(--good); color: var(--good); }
+.clip-status.error { border-color: var(--bad); color: var(--bad); }
+
+.clip-slide-name {
+  margin: 0.5rem 0 0;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  color: var(--ink-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.carousel-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+.carousel.single .carousel-nav { display: none; }
+
+.carousel-arrow {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--ink-dim);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.carousel-arrow:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.carousel-arrow:disabled { opacity: 0.3; cursor: default; }
+
+.carousel-dots { display: flex; gap: 0.45rem; }
+.carousel-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+.carousel-dot:hover { background: var(--ink-faint); }
+.carousel-dot.active { background: var(--accent); transform: scale(1.3); }
+
+.add-clip-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.6rem;
+}
+.add-clip-btn {
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.02em;
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--ink-faint);
+  border-radius: 999px;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.add-clip-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.add-clip-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
 video {
   width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
   border-radius: 10px;
   background: #000;
   display: block;
@@ -508,6 +631,19 @@ canvas#signal {
 
 .results { margin-top: 3rem; display: none; }
 .results.visible { display: block; }
+
+/* Brief entrance when the focused clip's results swap in */
+@keyframes results-swap {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.results.swap { animation: results-swap 0.32s ease; }
+
+.result-clip-name {
+  color: var(--ink);
+  text-transform: none;
+  letter-spacing: normal;
+}
 
 .section-eyebrow {
   font-family: var(--display);
