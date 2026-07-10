@@ -9,7 +9,15 @@
       <h1 class="wordmark">Four<span>Faced</span></h1>
       <p class="tagline">One clip. Four faces. Every caption backed by what's actually on screen.</p>
     </div>
-    <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle theme">AUTO</button>
+    <div class="header-actions">
+      <button class="manual-btn" id="manualBtn" type="button" aria-label="Open the user manual" title="User manual">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 6.7C10.4 5.2 8.4 4.6 6 4.6c-1.2 0-2.3.2-3 .5v14.2c.7-.3 1.8-.5 3-.5 2.4 0 4.4.6 6 2 1.6-1.4 3.6-2 6-2 1.2 0 2.3.2 3 .5V5.1c-.7-.3-1.8-.5-3-.5-2.4 0-4.4.6-6 2.1z"/>
+          <path d="M12 6.7v14.1"/>
+        </svg>
+      </button>
+      <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle theme">AUTO</button>
+    </div>
   </header>
 
   <section class="stage">
@@ -100,6 +108,109 @@
     <p class="footer-brand">Four<span>Faced</span></p>
     <p class="footer-note">Team VERPTO — AMD Developer Hackathon ACT II, Track 2</p>
   </footer>
+</div>
+
+<div class="manual-overlay" id="manualOverlay" hidden>
+  <div class="manual-backdrop" id="manualBackdrop"></div>
+  <div class="manual-dialog" role="dialog" aria-modal="true" aria-label="FourFaced user manual">
+    <button class="manual-close" id="manualClose" type="button" aria-label="Close manual">&times;</button>
+
+    <div class="manual-book" id="manualBook" data-state="0">
+      <div class="manual-sheet">
+        <div class="sheet-face sheet-front manual-cover">
+          <p class="cover-eyebrow">USER MANUAL</p>
+          <p class="cover-title">Four<span>Faced</span></p>
+          <p class="cover-sub">One clip in. Four captions out.<br>Here's everything you need to know.</p>
+          <p class="cover-hint">Click the page (or press Next) to open &#8594;</p>
+        </div>
+        <div class="sheet-face sheet-back">
+          <div class="manual-page">
+            <h3>What is FourFaced?</h3>
+            <p>You give it a short video. It watches the video, then writes <b>four captions</b> for it — each one in a different voice. We call them the <b>Four Faces</b>:</p>
+            <ul class="m-faces">
+              <li><span class="m-dot" style="--voice-color: var(--voice-formal)"></span><b>Formal</b> — polished and professional</li>
+              <li><span class="m-dot" style="--voice-color: var(--voice-sarcastic)"></span><b>Sarcastic</b> — dry wit, raised eyebrow</li>
+              <li><span class="m-dot" style="--voice-color: var(--voice-tech)"></span><b>Humorous — Tech</b> — jokes for computer people</li>
+              <li><span class="m-dot" style="--voice-color: var(--voice-everyday)"></span><b>Humorous — Everyday</b> — casual laughs for anyone</li>
+            </ul>
+            <p>Pick the caption you like best, copy it, and post it anywhere.</p>
+            <span class="m-pageno">1</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="manual-sheet">
+        <div class="sheet-face sheet-front">
+          <div class="manual-page">
+            <h3>Step 1 · Add your clip</h3>
+            <div class="m-diagram">
+              <span class="m-box"><span class="m-ico">&#127916;</span>Your clip</span>
+              <span class="m-arrow">drag &#8594;</span>
+              <span class="m-box"><span class="m-ico">&#128229;</span>Drop box</span>
+              <span class="m-arrow">&#8594;</span>
+              <span class="m-box"><span class="m-ico">&#128250;</span>Preview</span>
+            </div>
+            <p>Drag a video file into the dashed box — or click the box and pick a file from your computer.</p>
+            <p>No clip handy? Click one of the <b>sample pills</b> below the box.</p>
+            <p>You can add up to <b>4 clips</b>. They line up like characters on a select screen — click one to bring it to the front.</p>
+            <span class="m-pageno">2</span>
+          </div>
+        </div>
+        <div class="sheet-face sheet-back">
+          <div class="manual-page">
+            <h3>Step 2 · Caption it</h3>
+            <div class="m-diagram">
+              <span class="m-box"><span class="m-ico">&#9989;</span>Tick Faces</span>
+              <span class="m-arrow">&#8594;</span>
+              <span class="m-box m-box-accent"><span class="m-ico">&#128172;</span>Caption this clip</span>
+              <span class="m-arrow">&#8594;</span>
+              <span class="m-box"><span class="m-ico">&#8987;</span>~30 sec</span>
+            </div>
+            <p>All Four Faces are ticked to start. Untick any you don't want — its card below goes dim so you can see who's sitting out.</p>
+            <p>Then press the big <b>Caption</b> button. Each clip takes about half a minute; with several clips they go one after another, and you can watch the progress line.</p>
+            <span class="m-pageno">3</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="manual-sheet">
+        <div class="sheet-face sheet-front">
+          <div class="manual-page">
+            <h3>Step 3 · Use your captions</h3>
+            <div class="m-diagram">
+              <span class="m-box"><span class="m-ico">&#128266;</span>Listen</span>
+              <span class="m-box"><span class="m-ico">&#9999;&#65039;</span>Edit</span>
+              <span class="m-box"><span class="m-ico">&#128203;</span>Copy</span>
+            </div>
+            <p>Each Face gets its own card:</p>
+            <p><b>Copy</b> puts the caption on your clipboard. <b>Edit</b> lets you change any words (Save keeps them). The <b>speaker icon</b> reads the caption out loud, each Face with its own voice.</p>
+            <p>The <b>Evidence</b> box underneath shows what the AI actually saw in your video — so you know the captions aren't made up.</p>
+            <span class="m-pageno">4</span>
+          </div>
+        </div>
+        <div class="sheet-face sheet-back">
+          <div class="manual-page">
+            <h3>Handy tips</h3>
+            <ul class="m-tips">
+              <li>The <b>&times;</b> on a video removes that clip.</li>
+              <li>With several clips, use the <b>&#8592; &#8594; arrows</b>, the dots, or click a side clip to switch. The captions shown always belong to the clip in front.</li>
+              <li>Drag more videos anywhere onto the card to add them — no need to hunt for a button.</li>
+              <li>If a clip says <b>FAILED</b>, the others still finish. Just press Caption again.</li>
+              <li>Captions describe what's really on screen — an odd clip gets an odd caption. That's honesty!</li>
+            </ul>
+            <p class="m-credit">Made by Team VERPTO<br>AMD Developer Hackathon ACT II</p>
+            <span class="m-pageno">5</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="manual-controls">
+      <button class="manual-nav-btn" id="manualPrev" type="button">&#8249; Back</button>
+      <span class="manual-page-info" id="manualPageInfo">Cover</span>
+      <button class="manual-nav-btn" id="manualNext" type="button">Next &#8250;</button>
+    </div>
+  </div>
 </div>
 
 <script src="/static/app.js"></script>

@@ -202,6 +202,33 @@ a { color: var(--accent); }
   margin: 0.5rem 0 0;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.manual-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--ink-dim);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, box-shadow 0.2s ease;
+}
+.manual-btn svg { width: 18px; height: 18px; }
+/* Glows in the theme accent: green on dark, deep blue on light */
+.manual-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 65%, transparent);
+}
+
 .theme-toggle {
   background: transparent;
   border: 1px solid var(--border);
@@ -920,4 +947,264 @@ canvas#signal {
   font-size: 0.78rem;
   color: var(--ink-faint);
   margin: 0;
+}
+
+/* ---------- Digital manual (page-flip book) ---------- */
+
+.manual-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.manual-overlay[hidden] { display: none; }
+
+.manual-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 7, 13, 0.72);
+  backdrop-filter: blur(3px);
+}
+
+.manual-dialog {
+  position: relative;
+  z-index: 1;
+  animation: manual-in 0.3s ease;
+}
+@keyframes manual-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+.manual-close {
+  position: absolute;
+  top: -44px;
+  right: 0;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(10, 14, 22, 0.6);
+  color: #fff;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.manual-close:hover { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 60%, black); }
+
+/* The book: sheets hinge on the spine (left edge of the right-hand half).
+   The whole book slides so the visible spread stays centered. */
+.manual-book {
+  position: relative;
+  width: min(860px, 92vw);
+  aspect-ratio: 1.55;
+  perspective: 2400px;
+  transition: transform 0.7s cubic-bezier(0.4, 0.05, 0.3, 1);
+}
+.manual-book[data-state="0"] { transform: translateX(-25%); }
+.manual-book[data-state="3"] { transform: translateX(25%); }
+
+.manual-sheet {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 50%;
+  height: 100%;
+  transform-origin: left center;
+  transform-style: preserve-3d;
+  transition: transform 0.75s cubic-bezier(0.4, 0.05, 0.3, 1);
+}
+.manual-sheet.flipped { transform: rotateY(-180deg); }
+
+.sheet-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  cursor: pointer;
+}
+.sheet-front {
+  border-radius: 0 12px 12px 0;
+  box-shadow: inset 10px 0 20px -14px rgba(0, 0, 0, 0.55);
+}
+.sheet-back {
+  transform: rotateY(180deg);
+  border-radius: 12px 0 0 12px;
+  box-shadow: inset -10px 0 20px -14px rgba(0, 0, 0, 0.55);
+}
+
+/* Cover */
+.manual-cover {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 0.6rem;
+  padding: 1.5rem;
+  background: linear-gradient(145deg, var(--surface) 0%, var(--surface-2) 100%);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+.cover-eyebrow {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.28em;
+  color: var(--accent);
+  margin: 0;
+}
+.cover-title {
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: clamp(1.8rem, 4.5vw, 2.8rem);
+  line-height: 0.95;
+  margin: 0;
+}
+.cover-title span { color: var(--accent); }
+.cover-sub {
+  font-size: 0.85rem;
+  color: var(--ink-dim);
+  margin: 0;
+  line-height: 1.5;
+}
+.cover-hint {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--ink-faint);
+  margin: 1.2rem 0 0;
+}
+
+/* Inner pages */
+.manual-page {
+  position: relative;
+  height: 100%;
+  padding: clamp(0.9rem, 2.5vw, 1.6rem) clamp(1rem, 2.8vw, 1.7rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+.manual-page h3 {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: clamp(1rem, 2.2vw, 1.25rem);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 0.2rem;
+}
+.manual-page p {
+  margin: 0;
+  font-size: clamp(0.72rem, 1.55vw, 0.85rem);
+  line-height: 1.5;
+  color: var(--ink-dim);
+}
+.manual-page p b, .manual-page li b { color: var(--ink); font-weight: 700; }
+
+.m-faces, .m-tips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: clamp(0.7rem, 1.5vw, 0.82rem);
+  color: var(--ink-dim);
+}
+.m-tips { list-style: none; }
+.m-tips li::before { content: "· "; color: var(--accent); font-weight: 700; }
+.m-faces li { display: flex; align-items: center; gap: 0.5rem; }
+.m-dot {
+  flex-shrink: 0;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--voice-color);
+}
+
+.m-diagram {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0.3rem 0 0.4rem;
+}
+.m-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 0.45rem 0.7rem;
+  font-family: var(--mono);
+  font-size: clamp(0.6rem, 1.3vw, 0.7rem);
+  color: var(--ink);
+  background: var(--surface-2);
+}
+.m-box-accent { border-color: var(--accent); color: var(--accent); }
+.m-box .m-ico { font-size: clamp(1rem, 2.2vw, 1.35rem); line-height: 1; }
+.m-arrow {
+  font-family: var(--mono);
+  font-size: clamp(0.65rem, 1.4vw, 0.8rem);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.m-pageno {
+  position: absolute;
+  bottom: 0.7rem;
+  right: 1rem;
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--ink-faint);
+}
+.sheet-back .m-pageno { right: auto; left: 1rem; }
+
+.m-credit {
+  margin-top: auto !important;
+  font-family: var(--mono);
+  font-size: 0.65rem !important;
+  color: var(--ink-faint) !important;
+  text-align: center;
+}
+
+.manual-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.1rem;
+  margin-top: 1rem;
+}
+.manual-nav-btn {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  background: rgba(10, 14, 22, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  color: #fff;
+  border-radius: 999px;
+  padding: 0.45rem 1.1rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, box-shadow 0.2s ease;
+}
+.manual-nav-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.manual-nav-btn:disabled { opacity: 0.35; cursor: default; }
+.manual-page-info {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.75);
+  min-width: 5.5rem;
+  text-align: center;
 }

@@ -740,5 +740,71 @@
     results.classList.add("visible");
   }
 
+  // ---------- Digital manual (page-flip book) ----------
+  const manualBtn = $("manualBtn"), manualOverlay = $("manualOverlay"), manualBackdrop = $("manualBackdrop");
+  const manualClose = $("manualClose"), manualBook = $("manualBook");
+  const manualPrev = $("manualPrev"), manualNext = $("manualNext"), manualPageInfo = $("manualPageInfo");
+  const manualSheets = [...manualBook.querySelectorAll(".manual-sheet")];
+  const MANUAL_LABELS = ["Cover", "Pages 1–2", "Pages 3–4", "Back page"];
+  let manualState = 0; // how many sheets lie flipped to the left
+  let manualAnimating = false;
+
+  function manualChrome() {
+    manualBook.dataset.state = String(manualState);
+    manualPrev.disabled = manualState === 0;
+    manualNext.disabled = manualState === manualSheets.length;
+    manualPageInfo.textContent = MANUAL_LABELS[manualState];
+  }
+  function manualSettle() {
+    manualSheets.forEach((sheet, i) => {
+      sheet.classList.toggle("flipped", i < manualState);
+      // unflipped stack: first on top; flipped stack: last on top
+      sheet.style.zIndex = String(i < manualState ? i + 1 : manualSheets.length - i);
+    });
+    manualChrome();
+  }
+  function manualFlip(dir) {
+    if (manualAnimating) return;
+    const next = manualState + dir;
+    if (next < 0 || next > manualSheets.length) return;
+    const sheet = manualSheets[dir > 0 ? manualState : manualState - 1];
+    manualAnimating = true;
+    sheet.style.zIndex = "50"; // ride above both stacks while turning
+    manualState = next;
+    sheet.classList.toggle("flipped", dir > 0);
+    manualChrome();
+    setTimeout(() => { manualAnimating = false; manualSettle(); }, 780);
+  }
+
+  function manualKeydown(e) {
+    if (e.key === "Escape") closeManual();
+    else if (e.key === "ArrowRight") manualFlip(1);
+    else if (e.key === "ArrowLeft") manualFlip(-1);
+  }
+  function openManual() {
+    manualOverlay.hidden = false;
+    manualSettle();
+    document.addEventListener("keydown", manualKeydown);
+    manualClose.focus();
+  }
+  function closeManual() {
+    manualOverlay.hidden = true;
+    document.removeEventListener("keydown", manualKeydown);
+    manualBtn.focus();
+  }
+
+  manualBtn.addEventListener("click", openManual);
+  manualClose.addEventListener("click", closeManual);
+  manualBackdrop.addEventListener("click", closeManual);
+  manualNext.addEventListener("click", () => manualFlip(1));
+  manualPrev.addEventListener("click", () => manualFlip(-1));
+  // Clicking a right-hand page turns forward; a left-hand page turns back.
+  manualBook.addEventListener("click", (e) => {
+    const face = e.target.closest(".sheet-face");
+    if (!face) return;
+    manualFlip(face.classList.contains("sheet-front") ? 1 : -1);
+  });
+  manualSettle();
+
   updateChrome();
 })();
