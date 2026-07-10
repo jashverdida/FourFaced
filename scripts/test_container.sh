@@ -14,7 +14,7 @@ docker run --rm \
   --platform linux/amd64 \
   -v "$(pwd)/tests/sample_input:/input:ro" \
   -v "$(pwd)/local_output:/output" \
-  -e FIREWORKS_API_KEY="${FIREWORKS_API_KEY:-}" \
+  -e GEMINI_API_KEY="${GEMINI_API_KEY:-}" \
   fourfaced:latest
 
 python scripts/validate_output.py local_output/results.json tests/sample_input/tasks.json

@@ -21,7 +21,7 @@ jobs:
           docker run --rm --platform linux/amd64 \
             -v "$PWD/tests/sample_input:/input:ro" \
             -v "$PWD/local_output:/output" \
-            -e FIREWORKS_API_KEY="${{ secrets.FIREWORKS_API_KEY }}" \
+            -e GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}" \
             fourfaced:ci
 
       - name: Validate output schema
