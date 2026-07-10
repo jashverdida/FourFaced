@@ -179,38 +179,56 @@ def build_style_prompt(facts: str, styles: list, strict: bool = False) -> str:
     return prompt
 
 
-# Seconds reserved for a no-think rescue pass if the thinking pass fails or
-# runs long. The thinking attempt is only made when the budget can absorb it.
-STYLE_RESCUE_RESERVE = 7.0
-STYLE_THINK_MIN_BUDGET = 18.0
+# Minimum budget left before attempting the thinking refinement pass (must
+# exceed the API's 10s minimum request deadline).
+STYLE_REFINE_MIN_BUDGET = 12.0
 
 
-def style_captions(facts: str, styles: list, deadline: float, strict: bool = False,
-                   allow_think: bool = True) -> tuple:
-    """Style the grounded facts. Returns (captions_dict, used_thinking).
+def style_captions(facts: str, styles: list, deadline: float, strict: bool = False) -> dict:
+    """Draft pass: facts to styled captions, thinking suppressed for speed.
 
-    Gemma 4's thinking is where drafts get checked against the facts, so a
-    thinking pass is preferred — but free-tier latency is variable, so the
-    thinking attempt gets a sub-deadline that always leaves room for a fast
-    no-think rescue pass.
+    This is the quality floor — it must succeed fast. The thinking pass runs
+    afterwards as refine_captions(), a pure upgrade that can never cost us
+    the clip.
     """
-    prompt = build_style_prompt(facts, styles, strict=strict)
-    if allow_think and deadline - time.monotonic() >= STYLE_THINK_MIN_BUDGET:
-        try:
-            raw = llm.generate(
-                STYLE_MODEL, [prompt],
-                deadline=deadline - STYLE_RESCUE_RESERVE,
-                max_tokens=3072, temperature=0.85, think=True,
-            )
-            return extract_json(raw), True
-        except Exception as e:
-            log.warning("Thinking styling pass failed (%s); rescuing without thinking", e)
     raw = llm.generate(
-        STYLE_MODEL, [prompt],
+        STYLE_MODEL,
+        [build_style_prompt(facts, styles, strict=strict)],
         deadline=deadline,
         max_tokens=1024, temperature=0.85, think=False,
     )
-    return extract_json(raw), False
+    return extract_json(raw)
+
+
+def refine_captions(facts: str, captions: dict, styles: list, deadline: float) -> dict:
+    """Thinking pass: Gemma reviews the draft captions against the facts.
+
+    Returns the refined captions, or raises — callers keep the drafts on any
+    failure, so a timeout here can never hurt the clip.
+    """
+    guide_lines = "\n".join(
+        f'- "{s}": {STYLE_GUIDES.get(s, "a " + s.replace("_", " ") + " tone")}'
+        for s in styles)
+    keys_example = "{" + ", ".join(f'"{s}": "..."' for s in styles) + "}"
+    prompt = (
+        "Facts observed from a short video clip:\n\n"
+        f"FACTS:\n{facts}\n\n"
+        f"Draft captions for the clip:\n{json.dumps({s: captions[s] for s in styles})}\n\n"
+        f"Style definitions:\n{guide_lines}\n\n"
+        "Review each draft against the FACTS: fix anything the facts do not "
+        "support, sharpen weak style execution, and keep each caption 1-2 "
+        "English sentences. If a draft is already accurate and on-style, keep it.\n"
+        f"Respond with ONLY the final JSON object, nothing else: {keys_example}"
+    )
+    raw = llm.generate(
+        STYLE_MODEL, [prompt],
+        deadline=deadline,
+        max_tokens=3072, temperature=0.6, think=True,
+    )
+    refined = extract_json(raw)
+    if missing_styles(refined, styles):
+        raise ValueError("refinement dropped styles; keeping drafts")
+    return {s: refined[s].strip() for s in styles}
 
 
 def missing_styles(captions, styles: list) -> list:
@@ -287,9 +305,9 @@ def process_task(task: dict) -> tuple:
         meta["timings"]["ground_s"] = round(time.monotonic() - t2, 1)
 
     t3 = time.monotonic()
-    captions, meta["style_thinking"] = {}, False
+    captions = {}
     try:
-        captions, meta["style_thinking"] = style_captions(facts, styles, deadline)
+        captions = style_captions(facts, styles, deadline)
     except Exception as e:
         log.warning("Task %s: styling failed (%s)", meta["task_id"], e)
 
@@ -302,8 +320,7 @@ def process_task(task: dict) -> tuple:
         log.warning("Task %s: styles %s missing/invalid; strict retry",
                     meta["task_id"], missing)
         try:
-            retry_captions, _ = style_captions(facts, styles, deadline,
-                                               strict=True, allow_think=False)
+            retry_captions = style_captions(facts, styles, deadline, strict=True)
             for s in missing_styles(captions, styles):
                 if s not in missing_styles(retry_captions, [s]):
                     captions[s] = retry_captions[s]
@@ -318,8 +335,22 @@ def process_task(task: dict) -> tuple:
         fills = template_captions(facts, still_missing)
         for s in still_missing:
             captions[s] = fills[s]
-
     captions = {s: captions[s].strip() for s in styles}
     meta["timings"]["style_s"] = round(time.monotonic() - t3, 1)
+
+    # Upgrade pass: Gemma's thinking reviews the drafts against the facts.
+    # Only attempted with clean LLM drafts and budget to spare; any failure
+    # keeps the drafts.
+    meta["style_thinking"] = False
+    if not still_missing and deadline - time.monotonic() >= STYLE_REFINE_MIN_BUDGET:
+        t4 = time.monotonic()
+        try:
+            captions = refine_captions(facts, captions, styles, deadline)
+            meta["style_thinking"] = True
+        except Exception as e:
+            log.info("Task %s: refinement pass skipped/failed (%s); keeping drafts",
+                     meta["task_id"], e)
+        meta["timings"]["refine_s"] = round(time.monotonic() - t4, 1)
+
     meta["timings"]["total_s"] = round(time.monotonic() - t0, 1)
     return captions, meta
