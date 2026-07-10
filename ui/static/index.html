@@ -36,8 +36,12 @@
       <div class="examples" id="examples"></div>
     </div>
 
-    <div class="controls">
+    <div class="faces-picker">
+      <p class="faces-picker-title">Pick the <span>Four Faces</span> you want captioning your clip</p>
       <div class="style-toggles" id="styleToggles"></div>
+    </div>
+
+    <div class="controls">
       <button class="run-btn" id="runBtn" type="button" disabled>Caption this clip</button>
     </div>
 
@@ -51,28 +55,28 @@
   </section>
 
   <section class="voices-strip" aria-label="The four voices">
-    <div class="voice-chip" style="--voice-color: var(--voice-formal)">
+    <div class="voice-chip" data-style="formal" style="--voice-color: var(--voice-formal)">
       <span class="voice-num">01</span>
       <div>
         <p class="voice-name">Formal</p>
         <p class="voice-desc">Polished and professional — ready for a press page.</p>
       </div>
     </div>
-    <div class="voice-chip" style="--voice-color: var(--voice-sarcastic)">
+    <div class="voice-chip" data-style="sarcastic" style="--voice-color: var(--voice-sarcastic)">
       <span class="voice-num">02</span>
       <div>
         <p class="voice-name">Sarcastic</p>
         <p class="voice-desc">Dry wit with a raised eyebrow.</p>
       </div>
     </div>
-    <div class="voice-chip" style="--voice-color: var(--voice-tech)">
+    <div class="voice-chip" data-style="humorous_tech" style="--voice-color: var(--voice-tech)">
       <span class="voice-num">03</span>
       <div>
         <p class="voice-name">Humorous — Tech</p>
         <p class="voice-desc">Jokes only your dev team will get.</p>
       </div>
     </div>
-    <div class="voice-chip" style="--voice-color: var(--voice-everyday)">
+    <div class="voice-chip" data-style="humorous_non_tech" style="--voice-color: var(--voice-everyday)">
       <span class="voice-num">04</span>
       <div>
         <p class="voice-name">Humorous — Everyday</p>

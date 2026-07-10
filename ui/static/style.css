@@ -495,19 +495,31 @@ video::-webkit-media-controls-timeline { display: none; }
   transform: scale(1.08);
 }
 
+.faces-picker {
+  margin-top: 1.4rem;
+  text-align: center;
+}
+.faces-picker-title {
+  margin: 0 0 0.6rem;
+  font-size: 0.8rem;
+  color: var(--ink-dim);
+}
+.faces-picker-title span {
+  color: var(--accent);
+  font-weight: 700;
+}
+
 .controls {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-top: 1.25rem;
-  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 1.1rem;
 }
 
 .style-toggles {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+  justify-content: center;
 }
 .style-toggle {
   display: inline-flex;
@@ -618,6 +630,12 @@ canvas#signal {
   border-left: 3px solid var(--voice-color);
   border-radius: 10px;
   padding: 0.85rem 1rem;
+  transition: opacity 0.25s ease, filter 0.25s ease;
+}
+/* A Face unticked in the picker steps out of the line-up */
+.voice-chip.dimmed {
+  opacity: 0.35;
+  filter: saturate(0.3);
 }
 .voice-num {
   font-family: var(--mono);
@@ -887,7 +905,6 @@ canvas#signal {
 .footer {
   margin-top: 3.5rem;
   padding-top: 1.4rem;
-  border-top: 1px solid var(--border);
   display: flex;
   align-items: baseline;
   justify-content: space-between;

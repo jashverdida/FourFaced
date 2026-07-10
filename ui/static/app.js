@@ -48,7 +48,18 @@
   function selectedStyles() {
     return [...styleToggles.querySelectorAll("input:checked")].map((i) => i.dataset.style);
   }
-  styleToggles.addEventListener("change", () => updateChrome());
+
+  // Unticking a Face in the picker shadows its chip in the line-up below.
+  const voiceChips = document.querySelectorAll(".voice-chip[data-style]");
+  function syncVoiceChips() {
+    const active = new Set(selectedStyles());
+    voiceChips.forEach((chip) => chip.classList.toggle("dimmed", !active.has(chip.dataset.style)));
+  }
+  styleToggles.addEventListener("change", () => {
+    syncVoiceChips();
+    updateChrome();
+  });
+  syncVoiceChips();
 
   // ---------- Batch of clips (character-select carousel) ----------
   // Up to MAX_CLIPS clips; the focused one sits center stage at full size,
