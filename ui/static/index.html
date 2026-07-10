@@ -23,6 +23,18 @@
 
     <div class="player-wrap" id="playerWrap">
       <video id="player" controls playsinline></video>
+      <button class="clear-btn" id="clearBtn" type="button" aria-label="Remove clip">&times;</button>
+      <div class="video-progress" id="videoProgress" role="slider" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+        <div class="video-progress-track">
+          <div class="video-progress-buffered" id="progressBuffered"></div>
+          <div class="video-progress-fill" id="progressFill"></div>
+          <div class="video-progress-thumb" id="progressThumb"></div>
+        </div>
+        <div class="video-progress-time">
+          <span id="progressCurrentTime">0:00</span>
+          <span id="progressDuration">0:00</span>
+        </div>
+      </div>
     </div>
 
     <div class="controls">
@@ -39,6 +51,37 @@
     <div class="error-box" id="errorBox"></div>
   </section>
 
+  <section class="voices-strip" aria-label="The four voices">
+    <div class="voice-chip" style="--voice-color: var(--voice-formal)">
+      <span class="voice-num">01</span>
+      <div>
+        <p class="voice-name">Formal</p>
+        <p class="voice-desc">Polished and professional — ready for a press page.</p>
+      </div>
+    </div>
+    <div class="voice-chip" style="--voice-color: var(--voice-sarcastic)">
+      <span class="voice-num">02</span>
+      <div>
+        <p class="voice-name">Sarcastic</p>
+        <p class="voice-desc">Dry wit with a raised eyebrow.</p>
+      </div>
+    </div>
+    <div class="voice-chip" style="--voice-color: var(--voice-tech)">
+      <span class="voice-num">03</span>
+      <div>
+        <p class="voice-name">Humorous — Tech</p>
+        <p class="voice-desc">Jokes only your dev team will get.</p>
+      </div>
+    </div>
+    <div class="voice-chip" style="--voice-color: var(--voice-everyday)">
+      <span class="voice-num">04</span>
+      <div>
+        <p class="voice-name">Humorous — Everyday</p>
+        <p class="voice-desc">Casual laughs for any feed.</p>
+      </div>
+    </div>
+  </section>
+
   <section class="results" id="results">
     <p class="section-eyebrow">Four Voices</p>
     <div class="result-meta" id="resultMeta"></div>
@@ -51,7 +94,10 @@
     </div>
   </section>
 
-  <p class="footer-note">FourFaced — Team VERPTO — AMD Developer Hackathon ACT II, Track 2</p>
+  <footer class="footer">
+    <p class="footer-brand">Four<span>Faced</span></p>
+    <p class="footer-note">Team VERPTO — AMD Developer Hackathon ACT II, Track 2</p>
+  </footer>
 </div>
 
 <script src="/static/app.js"></script>
