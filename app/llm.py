@@ -140,6 +140,7 @@ def generate(model: str, contents, deadline: float, max_tokens: int = 2048,
 
     last_error = None
     attempts = 0
+    short_circuit_to_fallback = False
     while attempts < MAX_ATTEMPTS:
         remaining = deadline - time.monotonic()
         # The API enforces a minimum 10s request deadline, so any attempt with
@@ -177,13 +178,23 @@ def generate(model: str, contents, deadline: float, max_tokens: int = 2048,
             _health_success(model)
             return text.strip()
         except errors.APIError as e:
-            last_error = f"APIError {getattr(e, 'code', '?')}: {str(e)[:200]}"
-            if getattr(e, "code", None) not in RETRYABLE_CODES:
+            code = getattr(e, "code", None)
+            last_error = f"APIError {code}: {str(e)[:200]}"
+            if code not in RETRYABLE_CODES:
                 # Client-side error (bad request, auth, ...) — not provider
                 # health, so it doesn't feed the health tracker.
                 _set_active(None)
                 raise LLMError(f"generate({model}) failed: {last_error}") from e
-            _health_failure(last_error, getattr(e, "code", None))
+            # Primary model: HTTP 500 / internal errors short-circuit retries
+            # and force immediate failover to the smaller Gemma to protect
+            # the per-clip wall-clock budget.
+            if model != FALLBACK_MODEL and code == 500:
+                _health_failure(last_error, code)
+                log.warning("Primary model %s returned HTTP %s; short-circuiting to fallback %s",
+                            model, code, FALLBACK_MODEL)
+                short_circuit_to_fallback = True
+                break
+            _health_failure(last_error, code)
             log.warning("Transient LLM error (attempt %d/%d): %s",
                         attempts, MAX_ATTEMPTS, last_error)
         except Exception as e:
@@ -237,6 +248,11 @@ def generate(model: str, contents, deadline: float, max_tokens: int = 2048,
 
     _set_active(None)
     _health_exhausted()
+    if short_circuit_to_fallback:
+        log.error("generate(%s): primary model HTTP 500, failover failed. "
+                  "last error: %s", model, last_error)
+        raise LLMError(f"generate({model}) failed: primary model HTTP 500, "
+                       f"failover failed: {last_error}")
     if attempts < MAX_ATTEMPTS:
         log.error("generate(%s): clip budget exhausted after %d attempt(s); "
                   "last error: %s", model, attempts, last_error)

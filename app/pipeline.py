@@ -113,15 +113,46 @@ def probe_duration(path: str, deadline: float) -> float:
         return 10.0
 
 
+def probe_resolution(path: str, deadline: float) -> tuple:
+    """Return (width, height) of the first video stream, or (0, 0) on failure."""
+    timeout = max(2.0, min(10.0, deadline - time.monotonic() - LLM_RESERVE))
+    try:
+        out = subprocess.run(
+            [FFPROBE, "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=width,height",
+             "-of", "csv=s=x:p=0", path],
+            capture_output=True, text=True, timeout=timeout, check=True,
+        ).stdout.strip()
+        width, height = out.split("x")
+        return int(width), int(height)
+    except Exception:
+        log.warning("ffprobe resolution failed for %s; assuming unknown", path)
+        return 0, 0
+
+
 def sample_frames(path: str, duration: float, out_dir: str, deadline: float) -> list:
-    # Roughly one frame every 4-5 seconds, clamped to 6..MAX_FRAMES total.
-    # Biased to the dense end of that cadence (ceil at ~4s rather than round
-    # at 4.5s) so longer clips get more samples — discrete fast events (a
-    # goal, a card) are more likely to land in a frame. Short clips are
-    # unaffected: they already sit at the 6-frame floor either way.
-    n = max(6, min(MAX_FRAMES, math.ceil(duration / 4.0)))
+    width, height = probe_resolution(path, deadline)
+    high_res = height > 720
+    long_clip = duration > 15.0
+    needs_downscale = high_res or long_clip
+
+    if needs_downscale:
+        # Heavy clips: cap frames and downscale to 480p to protect the
+        # vision-model payload size and the 27-second clip budget.
+        n = 6
+    else:
+        # Existing cadence for lighter clips: ~1 frame every 4 seconds,
+        # clamped to 6..MAX_FRAMES.
+        n = max(6, min(MAX_FRAMES, math.ceil(duration / 4.0)))
+
     fps = n / max(duration, 0.1)
     pattern = os.path.join(out_dir, "frame_%02d.jpg")
+
+    if needs_downscale:
+        vf = f"fps={fps},scale=-2:480"
+    else:
+        vf = f"fps={fps}"
+
     # Prefer leaving the LLM reserve intact (3s viability floor), but never
     # let the floor extend past the clip deadline itself — better to fail
     # fast into the fallback ladder than to blow the hard cap.
@@ -129,7 +160,7 @@ def sample_frames(path: str, duration: float, out_dir: str, deadline: float) -> 
     timeout = min(max(3.0, remaining - LLM_RESERVE), max(0.5, remaining - 0.5))
     subprocess.run(
         [FFMPEG, "-y", "-v", "error", "-i", path,
-         "-vf", f"fps={fps},scale=-2:480", "-frames:v", str(n), "-q:v", "4",
+         "-vf", vf, "-frames:v", str(n), "-q:v", "4",
          pattern],
         capture_output=True, timeout=timeout, check=True,
     )
