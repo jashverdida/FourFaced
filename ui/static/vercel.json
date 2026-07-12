@@ -4,7 +4,7 @@
   "name": "fourfaced-demo",
   "framework": null,
   "routes": [
-    { "src": "/static/(.*)", "dest": "/static/$1" },
+    { "src": "/static/(.*)", "dest": "/$1" },
     { "src": "/fonts/(.*)", "dest": "/fonts/$1" },
     { "src": "/(.*)", "dest": "/index.html" }
   ]
