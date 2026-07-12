@@ -1,7 +1,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FourFaced</title>
-<link rel="stylesheet" href="/static/style.css?v=2">
+<link rel="stylesheet" href="/static/style.css?v=3">
 
 <div class="wrap">
   <header class="header">
@@ -66,6 +66,10 @@
 
     <div class="progress-block" id="progressBlock">
       <div class="progress-current" id="progressCurrent"></div>
+      <div class="model-badge" id="modelBadge" hidden>
+        <span class="model-badge-label">MODEL IN USE</span>
+        <span class="model-badge-name" id="modelBadgeName"></span>
+      </div>
       <canvas id="signal" width="880" height="90"></canvas>
       <ul class="stage-log" id="stageLog"></ul>
     </div>
@@ -241,9 +245,37 @@
               <li>If a clip says <b>FAILED</b>, the others still finish. Just press Caption again.</li>
               <li>Captions describe what's really on screen — an odd clip gets an odd caption. That's honesty!</li>
             </ul>
-            <p class="m-credit">Made by Team VERPTO<br>AMD Developer Hackathon ACT II</p>
             <span class="m-watermark" aria-hidden="true">05</span>
             <span class="m-pageno">5</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="manual-sheet">
+        <div class="sheet-face sheet-front">
+          <div class="manual-page">
+            <h3>The models <span>&amp; the backup plan</span></h3>
+            <p>Every caption starts with <b>Gemma 4 31B</b> — a big AI model that can see. It watches your clip, notes what's really there, and writes all four captions.</p>
+            <div class="m-diagram">
+              <span class="m-box m-box-accent"><span class="m-ico">&#129504;</span>Gemma 4 31B</span>
+              <span class="m-arrow">keeps failing? &#8594;</span>
+              <span class="m-box"><span class="m-ico">&#128735;</span>Gemma 4 26B</span>
+            </div>
+            <p>If 31B keeps erroring (with time left in the ~30-second promise), <b>Gemma 4 26B</b> gets one try — at any step: watching, writing, or the final double-check.</p>
+            <div class="m-fork">
+              <div class="m-out"><b>Both couldn't watch the clip?</b>You get a clearly-marked stand-in caption — it never pretends it saw something.</div>
+              <div class="m-out"><b>Watched it, couldn't add the voices?</b>Captions are built from the real notes it already took — plainer, but still true to your video.</div>
+            </div>
+            <p>The <b>Evidence</b> box always shows which path — and which model — did the work.</p>
+            <span class="m-watermark" aria-hidden="true">06</span>
+            <span class="m-pageno">6</span>
+          </div>
+        </div>
+        <div class="sheet-face sheet-back">
+          <div class="manual-page">
+            <h3>That's the <span>whole book</span></h3>
+            <p>Close the manual and go caption something. If a result ever looks off, the Evidence box will tell you exactly what happened — including which model did the work.</p>
+            <p class="m-credit">Made by Team VERPTO<br>AMD Developer Hackathon ACT II</p>
           </div>
         </div>
       </div>
@@ -257,4 +289,4 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=2"></script>
+<script src="/static/app.js?v=3"></script>

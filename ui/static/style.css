@@ -738,6 +738,43 @@ canvas#signal {
 .health-banner.visible { display: block; }
 .health-banner.limited { color: var(--bad); border-color: var(--bad); }
 
+/* Live "which model is running this" badge inside the progress block. */
+.model-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin: 0.8rem 0 0;
+  font-family: var(--mono);
+}
+.model-badge[hidden] { display: none; }
+.model-badge-label {
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  color: var(--ink-faint);
+}
+.model-badge-name {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 999px;
+  padding: 4px 16px;
+  animation: model-live 1.6s ease-in-out infinite;
+}
+.model-badge.backup .model-badge-name {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+@keyframes model-live {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+/* Per-stage model attribution chips in the results meta row. */
+.result-meta .model-chip b { color: var(--accent); }
+.result-meta .model-chip.backup b { color: var(--warn); }
+.result-meta .model-chip.none b { color: var(--ink-dim); font-style: italic; }
+
 /* ---------- Voices strip ---------- */
 
 .voices-strip {
@@ -1124,7 +1161,7 @@ canvas#signal {
   transition: transform 0.7s cubic-bezier(0.4, 0.05, 0.3, 1);
 }
 .manual-book[data-state="0"] { transform: translateX(-25%); }
-.manual-book[data-state="3"] { transform: translateX(25%); }
+.manual-book[data-state="4"] { transform: translateX(25%); }
 
 .manual-sheet {
   position: absolute;
@@ -1286,6 +1323,28 @@ canvas#signal {
 .m-face-card span {
   font-size: clamp(0.66rem, 1.45vw, 0.78rem);
   color: var(--ink-dim);
+}
+
+/* Two-outcome fork on the models page: what happens when both models fail. */
+.m-fork {
+  display: flex;
+  gap: 0.6rem;
+  margin: 0.55rem 0;
+}
+.m-fork .m-out {
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.6rem;
+  font-size: clamp(0.6rem, 1.35vw, 0.72rem);
+  color: var(--ink-dim);
+  line-height: 1.45;
+}
+.m-fork .m-out b {
+  display: block;
+  color: var(--ink);
+  font-size: clamp(0.64rem, 1.45vw, 0.76rem);
+  margin-bottom: 2px;
 }
 
 .m-tips {

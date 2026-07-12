@@ -20,6 +20,33 @@
   const progressBlock = $("progressBlock"), progressCurrent = $("progressCurrent"), stageLog = $("stageLog");
   const errorBox = $("errorBox"), results = $("results"), resultMeta = $("resultMeta");
   const healthBanner = $("healthBanner");
+  const modelBadge = $("modelBadge"), modelBadgeName = $("modelBadgeName");
+
+  // Display names for the models the pipeline can use. The backup entry must
+  // match llm.py's FALLBACK_MODEL; unknown ids fall through as raw text.
+  const BACKUP_MODEL_ID = "gemma-4-26b-a4b-it";
+  const MODEL_NAMES = {
+    "gemma-4-31b-it": "Gemma 4 31B",
+    "gemma-4-26b-a4b-it": "Gemma 4 26B",
+  };
+  function modelLabel(id) {
+    if (!id) return null;
+    const name = MODEL_NAMES[id] || id;
+    return id === BACKUP_MODEL_ID ? `${name} — backup` : name;
+  }
+
+  // Live "which model is running this" badge in the progress block, fed by
+  // /api/health's active_model (polled fast while a run is in flight).
+  function renderModelBadge(activeModel) {
+    if (!modelBadge) return;
+    if (!activeModel || !isRunning) {
+      modelBadge.hidden = true;
+      return;
+    }
+    modelBadgeName.textContent = modelLabel(activeModel);
+    modelBadge.classList.toggle("backup", activeModel === BACKUP_MODEL_ID);
+    modelBadge.hidden = false;
+  }
 
   // Model-API health banner: polls the server's read-only /api/health and
   // shows/clears itself as the pipeline's own calls fail or recover. Purely
@@ -41,7 +68,10 @@
   async function pollHealth() {
     try {
       const res = await fetch("/api/health");
-      if (res.ok) renderHealth(await res.json());
+      if (!res.ok) return;
+      const h = await res.json();
+      renderHealth(h);
+      renderModelBadge(h.active_model);
     } catch (e) { /* server unreachable; leave the banner as-is */ }
   }
   setInterval(pollHealth, 10000);
@@ -527,6 +557,8 @@
 
     stopSpeaking();
     isRunning = true;
+    // Poll fast while running so the model badge tracks the live call.
+    const modelPoll = setInterval(pollHealth, 2000);
     errorBox.classList.remove("visible");
     clips.forEach((c) => {
       c.result = null;
@@ -569,6 +601,8 @@
     }
 
     isRunning = false;
+    clearInterval(modelPoll);
+    if (modelBadge) modelBadge.hidden = true;
     progressBlock.classList.remove("visible");
     updateChrome();
   }
@@ -644,11 +678,24 @@
       if (data.total_s >= budget) totalCls = "budget-over";
       else if (data.total_s >= 0.8 * budget) totalCls = "budget-warn";
     }
+    // Which model actually served each stage — the headline transparency row.
+    const models = data.models || {};
+    const groundedBy = models.ground ? modelLabel(models.ground)
+      : (data.facts ? "?" : "failed — no model answered");
+    const styledBy = models.style ? modelLabel(models.style)
+      : (data.facts ? "facts template (no AI call)" : "generic stand-in");
+    const chipCls = (id) => id === BACKUP_MODEL_ID ? "model-chip backup"
+      : id ? "model-chip" : "model-chip none";
+
     const metaItems = [
+      [`Grounded by`, groundedBy, chipCls(models.ground)],
+      [`Styled by`, styledBy, chipCls(models.style)],
       data.duration_s != null ? [`Clip length`, `${data.duration_s}s`] : null,
       [`Frames sampled`, data.frame_count],
       [`Total run`, `${data.total_s ?? "?"}s${budget ? ` / ${budget}s budget` : ""}`, totalCls],
-      [`Refinement pass`, data.style_thinking ? "completed" : "skipped (budget)"],
+      [`Refinement pass`, data.style_thinking
+        ? `completed${models.refine ? ` (${modelLabel(models.refine)})` : ""}`
+        : "skipped (budget)"],
     ].filter(Boolean);
     metaItems.forEach(([label, val, cls]) => {
       const span = document.createElement("span");
@@ -773,6 +820,10 @@
     }
     if (data.strict_retry) flags.push([`strict JSON retry used`, false]);
     if (data.style_thinking) flags.push([`Gemma self-check completed`, false]);
+    const backupStages = ["ground", "style", "refine"]
+      .filter((k) => (data.models || {})[k] === BACKUP_MODEL_ID);
+    if (backupStages.length)
+      flags.push([`backup model (Gemma 4 26B) served: ${backupStages.join(", ")}`, true]);
     if (data.error) flags.push([`error: ${data.error}`, true]);
     flags.forEach(([text, warn]) => {
       const span = document.createElement("span");
@@ -789,7 +840,7 @@
   const manualClose = $("manualClose"), manualBook = $("manualBook");
   const manualPrev = $("manualPrev"), manualNext = $("manualNext"), manualPageInfo = $("manualPageInfo");
   const manualSheets = [...manualBook.querySelectorAll(".manual-sheet")];
-  const MANUAL_LABELS = ["Cover", "Pages 1–2", "Pages 3–4", "Back page"];
+  const MANUAL_LABELS = ["Cover", "Pages 1–2", "Pages 3–4", "Pages 5–6", "Back page"];
   let manualState = 0; // how many sheets lie flipped to the left
   let manualAnimating = false;
 

@@ -42,7 +42,25 @@ _health = {
     "last_error": None,
     "last_error_ts": None,
     "last_success_ts": None,
+    "active_model": None,          # model being attempted right now, if any
+    "last_served_model": None,     # model that produced the last success
 }
+
+
+def _set_active(model):
+    with _health_lock:
+        _health["active_model"] = model
+
+
+def last_served_model():
+    """Model id that produced the most recent successful generate().
+
+    Read it immediately after a successful call to attribute that call —
+    pipeline runs are sequential (and the UI serializes them), so there is
+    no cross-call race in practice.
+    """
+    with _health_lock:
+        return _health["last_served_model"]
 
 
 def _health_failure(message: str, code=None):
@@ -59,12 +77,15 @@ def _health_exhausted():
         _health["last_call_exhausted"] = True
 
 
-def _health_success():
+def _health_success(model=None):
     with _health_lock:
         _health["consecutive_failures"] = 0
         _health["last_call_exhausted"] = False
         _health["rate_limited"] = False
         _health["last_success_ts"] = time.time()
+        _health["active_model"] = None
+        if model:
+            _health["last_served_model"] = model
 
 
 def health_snapshot() -> dict:
@@ -82,6 +103,8 @@ def health_snapshot() -> dict:
     now = time.time()
     return {
         "status": status,
+        "active_model": h["active_model"],
+        "last_served_model": h["last_served_model"],
         "consecutive_failures": h["consecutive_failures"],
         "last_error": h["last_error"],
         "seconds_since_error":
@@ -125,6 +148,7 @@ def generate(model: str, contents, deadline: float, max_tokens: int = 2048,
         if remaining < MIN_TIMEOUT_S:
             break
         attempts += 1
+        _set_active(model)
         # If the window still fits two attempts, give this one only half of
         # it, so a hung request leaves room for a retry instead of consuming
         # the whole budget on one roll of the dice.
@@ -150,13 +174,14 @@ def generate(model: str, contents, deadline: float, max_tokens: int = 2048,
                 if resp.candidates:
                     finish = resp.candidates[0].finish_reason
                 raise LLMError(f"Empty completion from {model} (finish_reason={finish})")
-            _health_success()
+            _health_success(model)
             return text.strip()
         except errors.APIError as e:
             last_error = f"APIError {getattr(e, 'code', '?')}: {str(e)[:200]}"
             if getattr(e, "code", None) not in RETRYABLE_CODES:
                 # Client-side error (bad request, auth, ...) — not provider
                 # health, so it doesn't feed the health tracker.
+                _set_active(None)
                 raise LLMError(f"generate({model}) failed: {last_error}") from e
             _health_failure(last_error, getattr(e, "code", None))
             log.warning("Transient LLM error (attempt %d/%d): %s",
@@ -185,6 +210,7 @@ def generate(model: str, contents, deadline: float, max_tokens: int = 2048,
     if model != FALLBACK_MODEL and remaining >= MIN_TIMEOUT_S:
         log.warning("generate(%s): exhausted after %d attempt(s); failing over "
                     "to %s for one attempt", model, attempts, FALLBACK_MODEL)
+        _set_active(FALLBACK_MODEL)
         try:
             resp = client().models.generate_content(
                 model=FALLBACK_MODEL,
@@ -201,7 +227,7 @@ def generate(model: str, contents, deadline: float, max_tokens: int = 2048,
             text = resp.text
             if text and text.strip():
                 log.warning("generate(%s): failover to %s SUCCEEDED", model, FALLBACK_MODEL)
-                _health_success()
+                _health_success(FALLBACK_MODEL)
                 return text.strip()
             log.warning("generate(%s): failover to %s returned an empty completion",
                         model, FALLBACK_MODEL)
@@ -209,6 +235,7 @@ def generate(model: str, contents, deadline: float, max_tokens: int = 2048,
             log.warning("generate(%s): failover to %s failed too: %s: %s",
                         model, FALLBACK_MODEL, type(e).__name__, str(e)[:200])
 
+    _set_active(None)
     _health_exhausted()
     if attempts < MAX_ATTEMPTS:
         log.error("generate(%s): clip budget exhausted after %d attempt(s); "

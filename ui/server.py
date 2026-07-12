@@ -106,6 +106,10 @@ def run_pipeline_staged(source_url: str, styles: list, deadline: float, progress
     values instead of zeros when a later stage (e.g. grounding) fails.
     """
     timings = progress.setdefault("timings", {})
+    # Which model actually served each LLM stage (31B, or 26B after failover).
+    # Read from llm.last_served_model() immediately after each successful call;
+    # None means the stage never got an LLM answer (template/generic tier).
+    models = progress.setdefault("models", {"ground": None, "style": None, "refine": None})
     with tempfile.TemporaryDirectory(prefix="fourfaced_ui_run_") as tmp:
         yield "stage", {"name": "probing", "label": "Reading the clip…"}
         t = time.monotonic()
@@ -126,13 +130,16 @@ def run_pipeline_staged(source_url: str, styles: list, deadline: float, progress
                         "label": f"Grounding {len(frames)} frames with Gemma 4…"}
         t = time.monotonic()
         facts = pipeline.ground(frames, duration, deadline)
+        models["ground"] = llm.last_served_model()
         timings["ground_s"] = round(time.monotonic() - t, 1)
 
-    yield "stage", {"name": "drafting", "label": "Drafting captions in four voices…"}
+    yield "stage", {"name": "drafting", "label": "Drafting captions in four voices…",
+                    "models": dict(models)}
     t = time.monotonic()
     captions = {}
     try:
         captions = pipeline.style_captions(facts, styles, deadline)
+        models["style"] = llm.last_served_model()
     except Exception:
         pass
 
@@ -143,6 +150,7 @@ def run_pipeline_staged(source_url: str, styles: list, deadline: float, progress
         yield "stage", {"name": "retry", "label": f"Retrying {', '.join(missing)}…"}
         try:
             retry = pipeline.style_captions(facts, styles, deadline, strict=True)
+            models["style"] = llm.last_served_model()
             for s in pipeline.missing_styles(captions, styles):
                 if s not in pipeline.missing_styles(retry, [s]):
                     captions[s] = retry[s]
@@ -162,10 +170,12 @@ def run_pipeline_staged(source_url: str, styles: list, deadline: float, progress
     style_thinking = False
     if not still_missing and deadline - time.monotonic() >= pipeline.STYLE_REFINE_MIN_BUDGET:
         yield "stage", {"name": "refining",
-                        "label": "Gemma is checking drafts against the facts…"}
+                        "label": "Gemma is checking drafts against the facts…",
+                        "models": dict(models)}
         t = time.monotonic()
         try:
             captions = pipeline.refine_captions(facts, captions, styles, deadline)
+            models["refine"] = llm.last_served_model()
             style_thinking = True
         except Exception:
             pass
@@ -180,6 +190,7 @@ def run_pipeline_staged(source_url: str, styles: list, deadline: float, progress
         "template_styles": still_missing,
         "strict_retry": strict_retry,
         "timings": timings,
+        "models": dict(models),
         "budget_s": pipeline.PER_CLIP_BUDGET,
     }
 
@@ -228,6 +239,7 @@ def run(job_id):
                 "template_styles": styles,
                 "strict_retry": False,
                 "timings": progress.get("timings", {}),
+                "models": progress.get("models", {}),
                 "budget_s": pipeline.PER_CLIP_BUDGET,
                 "total_s": total_and_flag(),
                 "error": str(e),
