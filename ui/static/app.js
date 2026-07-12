@@ -8,18 +8,15 @@
     { key: "humorous_non_tech", label: "Humorous — Everyday", cls: "everyday", var: "--voice-everyday", speech: { rate: 1.1, pitch: 1.18 } },
   ];
 
-  const MAX_CLIPS = 4;
+  const MAX_CLIPS = 1;
 
   const $ = (id) => document.getElementById(id);
   const dropzone = $("dropzone"), fileInput = $("fileInput");
   const examplesEl = $("examples");
   const carousel = $("carousel"), carouselStage = $("carouselStage");
-  const prevBtn = $("prevBtn"), nextBtn = $("nextBtn"), carouselDots = $("carouselDots");
-  const addClipBtn = $("addClipBtn");
   const styleToggles = $("styleToggles"), runBtn = $("runBtn");
   const progressBlock = $("progressBlock"), progressCurrent = $("progressCurrent"), stageLog = $("stageLog");
   const errorBox = $("errorBox"), results = $("results"), resultMeta = $("resultMeta");
-  const healthBanner = $("healthBanner");
   const modelBadge = $("modelBadge"), modelBadgeName = $("modelBadgeName");
 
   // Display names for the models the pipeline can use. The backup entry must
@@ -48,34 +45,15 @@
     modelBadge.hidden = false;
   }
 
-  // Model-API health banner: polls the server's read-only /api/health and
-  // shows/clears itself as the pipeline's own calls fail or recover. Purely
-  // informational — it never gates any action.
-  function renderHealth(h) {
-    if (!healthBanner) return;
-    if (h.status === "ok") {
-      healthBanner.classList.remove("visible", "limited");
-      return;
-    }
-    const age = h.seconds_since_error != null
-      ? ` · last error ${Math.round(h.seconds_since_error)}s ago` : "";
-    healthBanner.textContent = (h.status === "limited"
-      ? "⚠ Gemini API rate limit reached — captions may fall back to simpler results until it recovers"
-      : "⚠ Gemini is experiencing issues right now — captions may fall back to simpler results until it recovers") + age;
-    healthBanner.classList.toggle("limited", h.status === "limited");
-    healthBanner.classList.add("visible");
-  }
+  // Poll /api/health only to show the active model badge while a run is in flight.
   async function pollHealth() {
     try {
       const res = await fetch("/api/health");
       if (!res.ok) return;
       const h = await res.json();
-      renderHealth(h);
       renderModelBadge(h.active_model);
-    } catch (e) { /* server unreachable; leave the banner as-is */ }
+    } catch (e) { /* server unreachable; ignore */ }
   }
-  setInterval(pollHealth, 10000);
-  pollHealth();
   const cardGrid = $("cardGrid"), evidenceFacts = $("evidenceFacts"), evidenceFlags = $("evidenceFlags");
   const resultClipName = $("resultClipName");
   const themeToggle = $("themeToggle");
@@ -120,10 +98,9 @@
   });
   syncVoiceChips();
 
-  // ---------- Batch of clips (character-select carousel) ----------
-  // Up to MAX_CLIPS clips; the focused one sits center stage at full size,
-  // immediate neighbours stand dimmed at the edges of the spotlight, and the
-  // whole set slides over with eased motion when focus moves.
+  // ---------- Single clip management ----------
+  // The UI only supports one clip at a time. The carousel container is kept
+  // because it hosts the video slide and its remove (X) button.
   let clips = []; // { id, kind: 'file'|'example', file?, url?, name, objectUrl, status, result, runStyles, slideEl, videoEl }
   let focusIdx = 0;
   let isRunning = false;
@@ -254,20 +231,14 @@
     }, 3500);
   }
 
-  function addClips(items) {
+  function addClip(item) {
     if (isRunning) return;
-    const slots = MAX_CLIPS - clips.length;
-    if (items.length > slots) {
-      showNotice(slots > 0
-        ? `The batch is capped at ${MAX_CLIPS} clips — added the first ${slots}.`
-        : `The batch is capped at ${MAX_CLIPS} clips. Remove one to add another.`);
-    }
-    items.slice(0, slots).forEach((init) => {
-      const clip = { id: `c${++idCounter}`, status: "ready", result: null, runStyles: null, objectUrl: null, ...init };
-      carouselStage.appendChild(buildSlide(clip));
-      clips.push(clip);
-    });
-    if (clips.length) focusClip(clips.length - 1, { force: true });
+    // Single-clip mode: replace any existing clip with the new one.
+    if (clips.length) removeClip(clips[0].id);
+    const clip = { id: `c${++idCounter}`, status: "ready", result: null, runStyles: null, objectUrl: null, ...item };
+    carouselStage.appendChild(buildSlide(clip));
+    clips.push(clip);
+    focusClip(0, { force: true });
     updateChrome();
   }
 
@@ -346,58 +317,28 @@
     const hasClips = clips.length > 0;
     dropzone.classList.toggle("hidden", hasClips);
     carousel.classList.toggle("visible", hasClips);
-    carousel.classList.toggle("single", clips.length === 1);
+    carousel.classList.toggle("single", true);
     carousel.classList.toggle("locked", isRunning);
-
-    carouselDots.innerHTML = "";
-    clips.forEach((c, i) => {
-      const dot = document.createElement("button");
-      dot.type = "button";
-      dot.className = `carousel-dot${i === focusIdx ? " active" : ""}`;
-      dot.setAttribute("aria-label", `Go to ${c.name}`);
-      dot.addEventListener("click", () => focusClip(i));
-      carouselDots.appendChild(dot);
-    });
-    prevBtn.disabled = focusIdx === 0;
-    nextBtn.disabled = focusIdx >= clips.length - 1;
-
-    const full = clips.length >= MAX_CLIPS;
-    addClipBtn.disabled = full || isRunning;
-    addClipBtn.textContent = full
-      ? `Batch full · ${clips.length}/${MAX_CLIPS}`
-      : `+ Add clip · ${clips.length}/${MAX_CLIPS}`;
 
     [...examplesEl.children].forEach((pill) =>
       pill.classList.toggle("active",
         clips.some((c) => c.kind === "example" && c.url === pill.dataset.url)));
 
-    runBtn.textContent = clips.length > 1 ? `Caption ${clips.length} clips` : "Caption this clip";
+    runBtn.textContent = "Caption this clip";
     runBtn.disabled = isRunning || !hasClips || selectedStyles().length === 0;
   }
 
-  prevBtn.addEventListener("click", () => focusClip(focusIdx - 1));
-  nextBtn.addEventListener("click", () => focusClip(focusIdx + 1));
-  carousel.addEventListener("keydown", (e) => {
-    if (e.target.closest('.video-progress, [contenteditable="true"]')) return;
-    if (e.key === "ArrowLeft") { e.preventDefault(); focusClip(focusIdx - 1); }
-    else if (e.key === "ArrowRight") { e.preventDefault(); focusClip(focusIdx + 1); }
-  });
-
-  addClipBtn.addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", () => {
-    const files = [...fileInput.files].filter((f) => f.type.startsWith("video/"));
-    if (files.length) addClips(files.map((f) => ({ kind: "file", file: f, name: f.name })));
+    const file = fileInput.files[0];
+    if (file && file.type.startsWith("video/")) addClip({ kind: "file", file, name: file.name });
     fileInput.value = "";
   });
-  // Drag-and-drop works on the whole stage card: onto the dropzone while the
-  // batch is empty, and onto the carousel area to add more clips after that
-  // (the + Add clip button still works too).
+  // Drag-and-drop onto the stage replaces the current single clip.
   const stageEl = document.querySelector(".stage");
-  const dragTarget = () => (clips.length ? carousel : dropzone);
   ["dragover", "dragenter"].forEach((evt) =>
     stageEl.addEventListener(evt, (e) => {
       e.preventDefault();
-      dragTarget().classList.add("drag-over");
+      (clips.length ? carousel : dropzone).classList.add("drag-over");
     }));
   stageEl.addEventListener("dragleave", (e) => {
     if (e.relatedTarget && stageEl.contains(e.relatedTarget)) return;
@@ -408,8 +349,8 @@
     e.preventDefault();
     dropzone.classList.remove("drag-over");
     carousel.classList.remove("drag-over");
-    const files = [...e.dataTransfer.files].filter((f) => f.type.startsWith("video/"));
-    if (files.length) addClips(files.map((f) => ({ kind: "file", file: f, name: f.name })));
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith("video/")) addClip({ kind: "file", file, name: file.name });
   });
 
   fetch("/api/examples").then((r) => r.json()).then((examples) => {
@@ -422,92 +363,58 @@
       btn.addEventListener("click", () => {
         const existing = clips.findIndex((c) => c.kind === "example" && c.url === ex.url);
         if (existing !== -1) focusClip(existing);
-        else addClips([{ kind: "example", url: ex.url, name: `Example: ${ex.label}` }]);
+        else addClip({ kind: "example", url: ex.url, name: `Example: ${ex.label}` });
       });
       examplesEl.appendChild(btn);
     });
   }).catch(() => {});
 
-  // ---------- Signal-split canvas ----------
-  const canvas = $("signal");
-  const ctx = canvas.getContext("2d");
-  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  let signalState = "idle"; // idle -> processing -> splitting -> split
-  let splitStart = 0;
-  let rafId = null;
+  // ---------- Run (single clip) ----------
+  runBtn.addEventListener("click", runSingle);
 
-  function cssVar(name) {
-    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  }
-  function drawSignal(t) {
-    const w = canvas.width, h = canvas.height, midY = h / 2;
-    ctx.clearRect(0, 0, w, h);
+  async function runSingle() {
+    const styles = selectedStyles();
+    if (!clips.length || !styles.length || isRunning) return;
 
-    if (signalState === "idle") {
-      ctx.strokeStyle = cssVar("--border");
-      ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.moveTo(0, midY); ctx.lineTo(w, midY); ctx.stroke();
-      return;
+    const clip = clips[0];
+    stopSpeaking();
+    isRunning = true;
+    const modelPoll = setInterval(pollHealth, 2000);
+    errorBox.classList.remove("visible");
+    clip.result = null;
+    setClipStatus(clip, "queued");
+    renderFocusedResults();
+    updateChrome();
+    progressBlock.classList.add("visible");
+
+    focusClip(0, { force: true });
+    setClipStatus(clip, "running");
+    stageLog.innerHTML = "";
+    progressCurrent.innerHTML = `<span class="dot"></span> Uploading…`;
+
+    try {
+      const data = await runOne(clip, styles, (label) => {
+        progressCurrent.innerHTML = `<span class="dot"></span> ${label}`;
+        logStage(label);
+      });
+      clip.result = data;
+      clip.runStyles = styles;
+      setClipStatus(clip, "done");
+      progressCurrent.innerHTML = `<span class="dot"></span> Done in ${data.total_s ?? "?"}s`;
+      renderFocusedResults();
+      pollHealth();
+    } catch (err) {
+      setClipStatus(clip, "error", err.message);
+      pollHealth();
+      if (err.fatal) showError(err.message);
+      else logStage(`failed: ${err.message}`);
     }
 
-    if (signalState === "processing") {
-      ctx.strokeStyle = cssVar("--border");
-      ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.moveTo(0, midY); ctx.lineTo(w, midY); ctx.stroke();
-      if (!reducedMotion) {
-        const sweepW = w * 0.22;
-        const x = ((t / 1400) % 1) * (w + sweepW) - sweepW;
-        const grad = ctx.createLinearGradient(x, 0, x + sweepW, 0);
-        grad.addColorStop(0, "transparent");
-        grad.addColorStop(0.5, cssVar("--accent"));
-        grad.addColorStop(1, "transparent");
-        ctx.strokeStyle = grad;
-        ctx.lineWidth = 2.5;
-        ctx.beginPath(); ctx.moveTo(Math.max(0, x), midY); ctx.lineTo(Math.min(w, x + sweepW), midY); ctx.stroke();
-      }
-      rafId = requestAnimationFrame(drawSignal);
-      return;
-    }
-
-    const colors = STYLE_META.map((s) => cssVar(s.var));
-    const endXs = colors.map((_, i) => (w / (colors.length + 1)) * (i + 1));
-    const progress = signalState === "split" || reducedMotion
-      ? 1
-      : Math.min(1, (t - splitStart) / 900);
-    const ease = 1 - Math.pow(1 - progress, 3);
-
-    colors.forEach((color, i) => {
-      const endX = endXs[i];
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(w / 2, midY);
-      const cx1 = w / 2 + (endX - w / 2) * 0.3;
-      const cy1 = midY;
-      const cx2 = w / 2 + (endX - w / 2) * 0.7;
-      const cy2 = midY + (h * 0.32) * ease;
-      const curX = w / 2 + (endX - w / 2) * ease;
-      const curY = midY + (h * 0.32) * ease;
-      ctx.bezierCurveTo(cx1, cy1, cx2, cy2, curX, curY);
-      ctx.stroke();
-    });
-
-    if (progress < 1) {
-      rafId = requestAnimationFrame(drawSignal);
-    } else {
-      signalState = "split";
-    }
+    isRunning = false;
+    clearInterval(modelPoll);
+    if (modelBadge) modelBadge.hidden = true;
+    updateChrome();
   }
-  function setSignalState(next) {
-    if (rafId) cancelAnimationFrame(rafId);
-    signalState = next;
-    if (next === "splitting") splitStart = performance.now();
-    rafId = requestAnimationFrame(drawSignal);
-  }
-  setSignalState("idle");
-
-  // ---------- Run (sequential batch over the carousel) ----------
-  runBtn.addEventListener("click", runBatch);
 
   function logStage(label) {
     const li = document.createElement("li");
@@ -549,62 +456,6 @@
         }
       })();
     });
-  }
-
-  async function runBatch() {
-    const styles = selectedStyles();
-    if (!clips.length || !styles.length || isRunning) return;
-
-    stopSpeaking();
-    isRunning = true;
-    // Poll fast while running so the model badge tracks the live call.
-    const modelPoll = setInterval(pollHealth, 2000);
-    errorBox.classList.remove("visible");
-    clips.forEach((c) => {
-      c.result = null;
-      setClipStatus(c, "queued");
-    });
-    renderFocusedResults();
-    updateChrome();
-    progressBlock.classList.add("visible");
-
-    for (let i = 0; i < clips.length; i++) {
-      const clip = clips[i];
-      focusClip(i, { force: true });
-      setClipStatus(clip, "running");
-      stageLog.innerHTML = "";
-      const prefix = clips.length > 1 ? `Clip ${i + 1} of ${clips.length} — ` : "";
-      progressCurrent.innerHTML = `<span class="dot"></span> ${prefix}Uploading…`;
-      setSignalState("processing");
-
-      try {
-        const data = await runOne(clip, styles, (label) => {
-          progressCurrent.innerHTML = `<span class="dot"></span> ${prefix}${label}`;
-          logStage(label);
-        });
-        clip.result = data;
-        clip.runStyles = styles;
-        setClipStatus(clip, "done");
-        setSignalState("splitting");
-        progressCurrent.innerHTML = `<span class="dot"></span> ${prefix}Done in ${data.total_s ?? "?"}s`;
-        renderFocusedResults();
-        pollHealth();
-      } catch (err) {
-        setClipStatus(clip, "error", err.message);
-        pollHealth();
-        if (err.fatal) {
-          showError(err.message);
-          break;
-        }
-        logStage(`failed: ${err.message}`);
-      }
-    }
-
-    isRunning = false;
-    clearInterval(modelPoll);
-    if (modelBadge) modelBadge.hidden = true;
-    progressBlock.classList.remove("visible");
-    updateChrome();
   }
 
   // ---------- Text-to-speech ----------
@@ -810,21 +661,12 @@
 
     evidenceFlags.innerHTML = "";
     const flags = [];
-    if (data.template_styles && data.template_styles.length) {
-      // Two very different rungs: with facts, captions are still derived
-      // from the real footage (only the styling LLM call fell back); without
-      // facts, they are generic and say nothing about this clip.
-      flags.push([data.facts
-        ? `grounded, but styling fell back to facts-template for: ${data.template_styles.join(", ")}`
-        : `generic fallback captions (no grounding): ${data.template_styles.join(", ")}`, true]);
-    }
     if (data.strict_retry) flags.push([`strict JSON retry used`, false]);
     if (data.style_thinking) flags.push([`Gemma self-check completed`, false]);
     const backupStages = ["ground", "style", "refine"]
       .filter((k) => (data.models || {})[k] === BACKUP_MODEL_ID);
     if (backupStages.length)
       flags.push([`backup model (Gemma 4 26B) served: ${backupStages.join(", ")}`, true]);
-    if (data.error) flags.push([`error: ${data.error}`, true]);
     flags.forEach(([text, warn]) => {
       const span = document.createElement("span");
       span.className = warn ? "flag warn" : "flag";
@@ -891,6 +733,7 @@
   }
 
   manualBtn.addEventListener("click", openManual);
+  $("refreshBtn").addEventListener("click", () => location.reload());
   manualClose.addEventListener("click", closeManual);
   if (location.hash === "#manual") openManual(); // deep link, also used by layout tests
   manualBackdrop.addEventListener("click", closeManual);

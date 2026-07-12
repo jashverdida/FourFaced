@@ -5,13 +5,16 @@ Usage: python scripts/validate_output.py <results.json> <tasks.json>
 Checks, against the tasks that were requested:
   - results.json is a JSON array
   - every requested task_id appears exactly once
-  - every requested style key is present with a non-empty string value
+  - all four required style keys (plus any extra requested styles) are
+    present with a non-empty string value — a missing key zeroes the clip
   - no unexpected style keys, no hyphenated style names
 Exits 0 if valid, 1 with a list of problems otherwise.
 """
 
 import json
 import sys
+
+REQUIRED_STYLES = ("formal", "sarcastic", "humorous_tech", "humorous_non_tech")
 
 
 def main() -> int:
@@ -42,7 +45,8 @@ def main() -> int:
 
     for task in tasks:
         tid = task["task_id"]
-        wanted = task.get("styles") or []
+        wanted = list(task.get("styles") or [])
+        wanted += [s for s in REQUIRED_STYLES if s not in wanted]
         entry = by_id.get(tid)
         if entry is None:
             problems.append(f"task {tid!r}: missing from results")

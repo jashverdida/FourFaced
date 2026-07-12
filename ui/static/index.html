@@ -11,6 +11,15 @@
     </div>
     <div class="header-actions">
       <div class="manual-btn-wrap">
+        <button class="manual-btn" id="refreshBtn" type="button" aria-label="Refresh the page" title="Refresh page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1"/>
+            <path d="M20.5 3.5v4.4h-4.4"/>
+          </svg>
+        </button>
+        <span class="manual-btn-label">REFRESH</span>
+      </div>
+      <div class="manual-btn-wrap">
         <button class="manual-btn" id="manualBtn" type="button" aria-label="Open the user manual" title="User manual">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M12 6.7C10.4 5.2 8.4 4.6 6 4.6c-1.2 0-2.3.2-3 .5v14.2c.7-.3 1.8-.5 3-.5 2.4 0 4.4.6 6 2 1.6-1.4 3.6-2 6-2 1.2 0 2.3.2 3 .5V5.1c-.7-.3-1.8-.5-3-.5-2.4 0-4.4.6-6 2.1z"/>
@@ -30,25 +39,15 @@
     </div>
   </header>
 
-  <div class="health-banner" id="healthBanner" role="status"></div>
-
   <section class="stage">
     <label class="dropzone" id="dropzone" for="fileInput">
       <p class="dropzone-title">Drop a clip here, or choose a file</p>
-      <p class="dropzone-sub" id="dropzoneSub">MP4, MOV, WebM — up to 4 clips (batch processing)</p>
-      <input type="file" id="fileInput" accept="video/*" multiple>
+      <p class="dropzone-sub" id="dropzoneSub">MP4, MOV, WebM</p>
+      <input type="file" id="fileInput" accept="video/*">
     </label>
 
-    <div class="carousel" id="carousel" aria-roledescription="carousel" aria-label="Uploaded clips">
+    <div class="carousel" id="carousel" aria-roledescription="region" aria-label="Uploaded clip">
       <div class="carousel-stage" id="carouselStage"></div>
-      <div class="carousel-nav">
-        <button class="carousel-arrow" id="prevBtn" type="button" aria-label="Previous clip">&#8592;</button>
-        <div class="carousel-dots" id="carouselDots"></div>
-        <button class="carousel-arrow" id="nextBtn" type="button" aria-label="Next clip">&#8594;</button>
-      </div>
-      <div class="add-clip-row">
-        <button class="add-clip-btn" id="addClipBtn" type="button">+ Add clip · 1/4</button>
-      </div>
     </div>
 
     <div class="examples-block">
@@ -70,7 +69,6 @@
         <span class="model-badge-label">MODEL IN USE</span>
         <span class="model-badge-name" id="modelBadgeName"></span>
       </div>
-      <canvas id="signal" width="880" height="90"></canvas>
       <ul class="stage-log" id="stageLog"></ul>
     </div>
 

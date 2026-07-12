@@ -59,7 +59,7 @@ def process_tasks(tasks: list) -> tuple:
         if not task_id:
             log.error("Skipping task with no task_id: %r", task)
             continue
-        styles = task.get("styles") or []
+        styles = pipeline.task_styles(task)
         started = time.monotonic()
         meta = {"task_id": task_id}
         try:

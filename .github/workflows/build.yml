@@ -15,6 +15,26 @@ jobs:
       - name: Build linux/amd64 image
         run: docker buildx build --platform linux/amd64 --tag fourfaced:ci --load .
 
+      - name: Report compressed image size (rules: must be < 10 GB)
+        run: |
+          bytes=$(docker image save fourfaced:ci | gzip | wc -c)
+          echo "Compressed image size: $bytes bytes ($(echo "scale=2; $bytes/1024/1024" | bc) MiB)"
+          test "$bytes" -lt 10737418240
+
+      - name: Time container startup (rules: ready for /input/tasks.json in < 60 s)
+        run: |
+          mkdir -p empty_input startup_output
+          echo '[]' > empty_input/tasks.json
+          start=$(date +%s%N)
+          docker run --rm --platform linux/amd64 \
+            -v "$PWD/empty_input:/input:ro" \
+            -v "$PWD/startup_output:/output" \
+            fourfaced:ci
+          end=$(date +%s%N)
+          ms=$(( (end - start) / 1000000 ))
+          echo "Container start -> read tasks.json -> write results.json -> exit: ${ms} ms"
+          test "$ms" -lt 60000
+
       - name: Run container against example tasks
         run: |
           mkdir -p local_output

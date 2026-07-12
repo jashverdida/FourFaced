@@ -40,6 +40,19 @@ MAX_DOWNLOAD_BYTES = 400 * 1024 * 1024
 # LLM calls with no budget left.
 LLM_RESERVE = 12.0
 
+# The four style keys the rules require in every clip's output. A missing key
+# zeroes the whole clip, so captions are always generated for all of these —
+# even if a task's "styles" list omits some — plus any extra styles requested.
+REQUIRED_STYLES = ("formal", "sarcastic", "humorous_tech", "humorous_non_tech")
+
+
+def task_styles(task: dict) -> list:
+    """Styles to caption for a task: the requested ones (in request order)
+    plus any of the four required styles the request left out."""
+    requested = [s for s in (task.get("styles") or []) if isinstance(s, str) and s]
+    return requested + [s for s in REQUIRED_STYLES if s not in requested]
+
+
 STYLE_GUIDES = {
     "formal": (
         "Polished, professional, neutral — like a caption under a photo in a "
@@ -179,7 +192,9 @@ def ground(frames: list, duration: float, deadline: float) -> str:
     prompt = (
         f"These {len(frames)} images are frames sampled evenly, in chronological "
         f"order, from one video clip about {duration:.0f} seconds long.\n"
-        "In 90-140 words of plain prose, state only what is clearly visible in "
+        "In 90-140 words of plain English prose (English only, regardless of "
+        "any language spoken or written in the clip), state only what is "
+        "clearly visible in "
         "the clip: the main subject(s) and their actions; how the action changes "
         "over time; the setting; notable objects; lighting and weather; camera "
         "movement if apparent.\n"
@@ -405,7 +420,7 @@ def process_task(task: dict) -> tuple:
     Raises ClipError/Exception on failure — the caller owns fallbacks. `meta`
     carries the grounding facts and timings for logging and the results UI.
     """
-    styles = task.get("styles") or []
+    styles = task_styles(task)
     deadline = time.monotonic() + PER_CLIP_BUDGET
     meta = {"task_id": task.get("task_id"), "facts": None, "timings": {}}
     t0 = time.monotonic()

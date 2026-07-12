@@ -24,6 +24,10 @@ MIN_TIMEOUT_S = 10.0
 # Cap any single attempt so one hung request can't eat the whole clip budget
 # and starve the remaining retries.
 MAX_ATTEMPT_TIMEOUT_S = 60.0
+# Hard cap on the FIRST primary-model attempt. A hung/broken server can hold
+# the connection for 20+ seconds before returning HTTP 500; this forces an
+# early fail so the failover and styling stages still have budget room.
+PRIMARY_TIMEOUT_CAP_S = 12.0
 # Attempts are bounded by the clip deadline, not this number — it only caps
 # pathological fast-failure loops. Transient 500s return in ~1-2s, so a
 # typical grounding window fits 4-5 attempts.
@@ -128,6 +132,29 @@ class LLMError(Exception):
     pass
 
 
+def _normalize_contents(contents):
+    """Convert mixed text/bytes/Part inputs into a single user Content object.
+
+    The google-genai SDK is sensitive to how multi-modal prompts are passed.
+    Wrapping everything in one Content(role='user', parts=[...]) is the
+    canonical form and avoids ambiguous handling of bare Part objects.
+    """
+    parts = []
+    for c in contents:
+        if isinstance(c, str):
+            parts.append(types.Part(text=c))
+        elif isinstance(c, types.Part):
+            parts.append(c)
+        elif isinstance(c, bytes):
+            # Caller forgot MIME type; assume JPEG (the pipeline writes JPGs).
+            parts.append(types.Part.from_bytes(data=c, mime_type="image/jpeg"))
+        elif isinstance(c, dict) and "data" in c and "mime_type" in c:
+            parts.append(types.Part.from_bytes(data=c["data"], mime_type=c["mime_type"]))
+        else:
+            raise LLMError(f"Unsupported content type in generate(): {type(c).__name__}")
+    return [types.Content(role="user", parts=parts)]
+
+
 def generate(model: str, contents, deadline: float, max_tokens: int = 2048,
              temperature: float = 0.7, think: bool = True) -> str:
     """One generate_content call, bounded by `deadline` (time.monotonic secs).
@@ -135,7 +162,7 @@ def generate(model: str, contents, deadline: float, max_tokens: int = 2048,
     Retries transient errors while budget remains. think=False sets
     thinkingLevel=minimal so no reasoning tokens are produced.
     """
-    request_contents = [types.Part(text=c) if isinstance(c, str) else c for c in contents]
+    request_contents = _normalize_contents(contents)
     thinking_config = types.ThinkingConfig(thinking_level="high" if think else "minimal")
 
     last_error = None
@@ -158,6 +185,10 @@ def generate(model: str, contents, deadline: float, max_tokens: int = 2048,
         else:
             per_attempt = remaining - 0.5
         timeout = min(MAX_ATTEMPT_TIMEOUT_S, max(MIN_TIMEOUT_S, per_attempt))
+        # First attempt on the primary model gets a strict short leash so a
+        # hung/broken server cannot burn 20+ seconds before the failover runs.
+        if attempts == 1 and model != FALLBACK_MODEL:
+            timeout = min(timeout, PRIMARY_TIMEOUT_CAP_S)
         try:
             resp = client().models.generate_content(
                 model=model,
