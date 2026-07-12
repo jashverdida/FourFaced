@@ -12,6 +12,7 @@ import pathlib
 import shutil
 import sys
 import tempfile
+import threading
 import time
 import uuid
 
@@ -20,6 +21,7 @@ from flask import Flask, Response, jsonify, request, send_from_directory
 APP_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app")
 sys.path.insert(0, APP_DIR)
 
+import llm  # noqa: E402
 import main  # noqa: E402  loads repo .env, exposes fallback_captions
 import pipeline  # noqa: E402
 
@@ -29,6 +31,11 @@ ALL_STYLES = ["formal", "sarcastic", "humorous_tech", "humorous_non_tech"]
 
 app = Flask(__name__, static_folder=None)
 JOBS = {}
+# One pipeline run at a time: overlapping runs would contend for the model
+# API (free-tier rate limits) and blur each other's wall-clock budgets. Runs
+# submitted together queue here, and each clip's budget starts only when its
+# run actually begins — matching the container's strictly sequential loop.
+RUN_LOCK = threading.Lock()
 
 # The three official example clips, so the UI can demo without a local file.
 EXAMPLES = [
@@ -54,6 +61,13 @@ def static_files(filename):
 @app.route("/api/examples")
 def examples():
     return jsonify(EXAMPLES)
+
+
+@app.route("/api/health")
+def health():
+    """Model-API health for the frontend banner. Read-only: reflects what
+    recent pipeline calls saw, never makes an API call of its own."""
+    return jsonify(llm.health_snapshot())
 
 
 @app.route("/api/upload", methods=["POST"])
@@ -83,25 +97,39 @@ def sse(event: str, data) -> str:
     return f"event: {event}\ndata: {payload}\n\n"
 
 
-def run_pipeline_staged(source_url: str, styles: list, deadline: float):
+def run_pipeline_staged(source_url: str, styles: list, deadline: float, progress: dict):
     """Mirrors pipeline.process_task's ladder, yielding (event, payload)
     at each real stage boundary instead of running silently to completion.
+
+    `progress` is updated in place as duration, frame count, and per-stage
+    timings become known, so the caller's error path can report the real
+    values instead of zeros when a later stage (e.g. grounding) fails.
     """
+    timings = progress.setdefault("timings", {})
     with tempfile.TemporaryDirectory(prefix="fourfaced_ui_run_") as tmp:
         yield "stage", {"name": "probing", "label": "Reading the clip…"}
+        t = time.monotonic()
         video_path = os.path.join(tmp, "clip.mp4")
         pipeline.download_video(source_url, video_path, deadline)
-        duration = pipeline.probe_duration(video_path)
+        duration = pipeline.probe_duration(video_path, deadline)
+        progress["duration_s"] = round(duration, 1)
+        timings["download_s"] = round(time.monotonic() - t, 1)
 
         yield "stage", {"name": "sampling",
                         "label": f"Sampling frames from {duration:.0f}s of footage…"}
+        t = time.monotonic()
         frames = pipeline.sample_frames(video_path, duration, tmp, deadline)
+        progress["frame_count"] = len(frames)
+        timings["frames_s"] = round(time.monotonic() - t, 1)
 
         yield "stage", {"name": "grounding",
                         "label": f"Grounding {len(frames)} frames with Gemma 4…"}
+        t = time.monotonic()
         facts = pipeline.ground(frames, duration, deadline)
+        timings["ground_s"] = round(time.monotonic() - t, 1)
 
     yield "stage", {"name": "drafting", "label": "Drafting captions in four voices…"}
+    t = time.monotonic()
     captions = {}
     try:
         captions = pipeline.style_captions(facts, styles, deadline)
@@ -129,16 +157,19 @@ def run_pipeline_staged(source_url: str, styles: list, deadline: float):
         for s in still_missing:
             captions[s] = fills[s]
     captions = {s: captions[s].strip() for s in styles}
+    timings["style_s"] = round(time.monotonic() - t, 1)
 
     style_thinking = False
     if not still_missing and deadline - time.monotonic() >= pipeline.STYLE_REFINE_MIN_BUDGET:
         yield "stage", {"name": "refining",
                         "label": "Gemma is checking drafts against the facts…"}
+        t = time.monotonic()
         try:
             captions = pipeline.refine_captions(facts, captions, styles, deadline)
             style_thinking = True
         except Exception:
             pass
+        timings["refine_s"] = round(time.monotonic() - t, 1)
 
     yield "done", {
         "facts": facts,
@@ -148,6 +179,8 @@ def run_pipeline_staged(source_url: str, styles: list, deadline: float):
         "style_thinking": style_thinking,
         "template_styles": still_missing,
         "strict_retry": strict_retry,
+        "timings": timings,
+        "budget_s": pipeline.PER_CLIP_BUDGET,
     }
 
 
@@ -161,12 +194,26 @@ def run(job_id):
     styles = styles or ALL_STYLES
 
     def stream():
+        if not RUN_LOCK.acquire(blocking=False):
+            yield sse("stage", {"name": "queued",
+                                "label": "Waiting for an earlier clip to finish…"})
+            RUN_LOCK.acquire()
         deadline = time.monotonic() + pipeline.PER_CLIP_BUDGET
         t0 = time.monotonic()
+        progress = {"duration_s": None, "frame_count": 0}
+
+        def total_and_flag():
+            total = round(time.monotonic() - t0, 1)
+            if total >= 0.8 * pipeline.PER_CLIP_BUDGET:
+                app.logger.warning("Clip run took %.1fs - %d%% of the %.0fs budget",
+                                   total, 100 * total / pipeline.PER_CLIP_BUDGET,
+                                   pipeline.PER_CLIP_BUDGET)
+            return total
+
         try:
-            for event, payload in run_pipeline_staged(job["source_url"], styles, deadline):
+            for event, payload in run_pipeline_staged(job["source_url"], styles, deadline, progress):
                 if event == "done":
-                    payload["total_s"] = round(time.monotonic() - t0, 1)
+                    payload["total_s"] = total_and_flag()
                 yield sse(event, payload)
         except Exception as e:
             # Same last-resort safety net as the competition container: a
@@ -175,15 +222,18 @@ def run(job_id):
             yield sse("done", {
                 "facts": None,
                 "captions": main.fallback_captions(styles),
-                "duration_s": None,
-                "frame_count": 0,
+                "duration_s": progress["duration_s"],
+                "frame_count": progress["frame_count"],
                 "style_thinking": False,
                 "template_styles": styles,
                 "strict_retry": False,
-                "total_s": round(time.monotonic() - t0, 1),
+                "timings": progress.get("timings", {}),
+                "budget_s": pipeline.PER_CLIP_BUDGET,
+                "total_s": total_and_flag(),
                 "error": str(e),
             })
         finally:
+            RUN_LOCK.release()
             shutil.rmtree(job["dir"], ignore_errors=True)
             JOBS.pop(job_id, None)
 

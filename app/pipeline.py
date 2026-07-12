@@ -15,6 +15,7 @@ import subprocess
 import tempfile
 import time
 import urllib.parse
+import zlib
 
 import requests
 from google.genai import types
@@ -28,6 +29,10 @@ STYLE_MODEL = os.environ.get("STYLE_MODEL", "gemma-4-31b-it")
 PER_CLIP_BUDGET = float(os.environ.get("PER_CLIP_BUDGET", "27"))
 FFMPEG = os.environ.get("FFMPEG_BIN", "ffmpeg")
 FFPROBE = os.environ.get("FFPROBE_BIN", "ffprobe")
+# Frame-sampling ceiling, tuned to the 27s clip budget: grounding payloads
+# above ~15 frames risk eating the styling stage's share. Raising it trades
+# clip-budget margin for denser sampling on long clips.
+MAX_FRAMES = int(os.environ.get("MAX_FRAMES", "15"))
 
 MAX_DOWNLOAD_BYTES = 400 * 1024 * 1024
 # Seconds we insist on keeping in reserve for the two LLM stages: if the
@@ -91,12 +96,16 @@ def download_video(url: str, dest: str, deadline: float) -> int:
         raise ClipError(f"Download failed: {type(e).__name__}: {e}") from e
 
 
-def probe_duration(path: str) -> float:
+def probe_duration(path: str, deadline: float) -> float:
+    # Timeout tied to the clip deadline (was a fixed 10s that could overshoot
+    # it): prefer leaving the LLM reserve intact, floor 2s so the probe stays
+    # viable, and on failure fall back to assuming 10s as before.
+    timeout = max(2.0, min(10.0, deadline - time.monotonic() - LLM_RESERVE))
     try:
         out = subprocess.run(
             [FFPROBE, "-v", "error", "-show_entries", "format=duration",
              "-of", "csv=p=0", path],
-            capture_output=True, text=True, timeout=10, check=True,
+            capture_output=True, text=True, timeout=timeout, check=True,
         ).stdout.strip()
         return max(0.5, float(out))
     except Exception:
@@ -105,15 +114,19 @@ def probe_duration(path: str) -> float:
 
 
 def sample_frames(path: str, duration: float, out_dir: str, deadline: float) -> list:
-    # Roughly one frame every 4-5 seconds, clamped to 6..15 frames total.
+    # Roughly one frame every 4-5 seconds, clamped to 6..MAX_FRAMES total.
     # Biased to the dense end of that cadence (ceil at ~4s rather than round
     # at 4.5s) so longer clips get more samples — discrete fast events (a
     # goal, a card) are more likely to land in a frame. Short clips are
     # unaffected: they already sit at the 6-frame floor either way.
-    n = max(6, min(15, math.ceil(duration / 4.0)))
+    n = max(6, min(MAX_FRAMES, math.ceil(duration / 4.0)))
     fps = n / max(duration, 0.1)
     pattern = os.path.join(out_dir, "frame_%02d.jpg")
-    timeout = max(3.0, deadline - time.monotonic() - LLM_RESERVE)
+    # Prefer leaving the LLM reserve intact (3s viability floor), but never
+    # let the floor extend past the clip deadline itself — better to fail
+    # fast into the fallback ladder than to blow the hard cap.
+    remaining = deadline - time.monotonic()
+    timeout = min(max(3.0, remaining - LLM_RESERVE), max(0.5, remaining - 0.5))
     subprocess.run(
         [FFMPEG, "-y", "-v", "error", "-i", path,
          "-vf", f"fps={fps},scale=-2:480", "-frames:v", str(n), "-q:v", "4",
@@ -150,7 +163,9 @@ def ground(frames: list, duration: float, deadline: float) -> str:
         GROUND_MODEL,
         contents,
         deadline=deadline,
-        max_tokens=1024,
+        # The prompt asks for 90-140 words (~200 tokens); 256 caps the
+        # worst-case generation tail without ever truncating a valid answer.
+        max_tokens=256,
         temperature=0.3,
         think=False,
     )
@@ -200,8 +215,13 @@ def build_style_prompt(facts: str, styles: list, strict: bool = False) -> str:
 
 
 # Minimum budget left before attempting the thinking refinement pass (must
-# exceed the API's 10s minimum request deadline).
-STYLE_REFINE_MIN_BUDGET = 12.0
+# exceed the API's 10s minimum request deadline plus the safety margin).
+STYLE_REFINE_MIN_BUDGET = 15.0
+# The refinement pass runs against its own bounded slice of the clip budget
+# — min(remaining - margin, cap) — so a slow thinking pass can never consume
+# the whole tail of the clip. Its failure always keeps the drafts.
+STYLE_REFINE_CAP = 15.0
+STYLE_REFINE_MARGIN = 2.0
 
 
 def style_captions(facts: str, styles: list, deadline: float, strict: bool = False) -> dict:
@@ -215,7 +235,9 @@ def style_captions(facts: str, styles: list, deadline: float, strict: bool = Fal
         STYLE_MODEL,
         [build_style_prompt(facts, styles, strict=strict)],
         deadline=deadline,
-        max_tokens=1024, temperature=0.85, think=False,
+        # Four 1-2 sentence captions as JSON is ~150-250 tokens; 512 caps the
+        # generation tail with ample headroom.
+        max_tokens=512, temperature=0.85, think=False,
     )
     return extract_json(raw)
 
@@ -224,8 +246,12 @@ def refine_captions(facts: str, captions: dict, styles: list, deadline: float) -
     """Thinking pass: Gemma reviews the draft captions against the facts.
 
     Returns the refined captions, or raises — callers keep the drafts on any
-    failure, so a timeout here can never hurt the clip.
+    failure, so a timeout here can never hurt the clip. Internally bounded to
+    a STYLE_REFINE_CAP slice of the remaining budget (single attempt), so it
+    can never run the clip to its deadline either.
     """
+    deadline = min(deadline - STYLE_REFINE_MARGIN,
+                   time.monotonic() + STYLE_REFINE_CAP)
     guide_lines = "\n".join(
         f'- "{s}": {STYLE_GUIDES.get(s, "a " + s.replace("_", " ") + " tone")}'
         for s in styles)
@@ -261,7 +287,12 @@ def missing_styles(captions, styles: list) -> list:
 
 _FACTS_LEADIN = re.compile(
     r"^(the|this)\s+(clip|video|footage|scene)\s+"
-    r"(shows|features|depicts|captures|presents|opens\s+with)\s+", re.I)
+    r"(shows|features|depicts|captures|presents|portrays|opens\s+with|"
+    r"begins\s+with|starts\s+with|is\s+set\s+in|is)\s+", re.I)
+
+# Clip-noun opener that survived _FACTS_LEADIN (e.g. "the clip takes place
+# ..."), for voiced templates to rewrite into natural phrasing.
+_FACTS_CLIP_NOUN = re.compile(r"^(the|this)\s+(clip|video|footage|scene)\s+", re.I)
 
 
 def _facts_subject(facts: str, max_len: int = 140) -> str:
@@ -273,25 +304,66 @@ def _facts_subject(facts: str, max_len: int = 140) -> str:
     return sentence or "a short scene recorded on camera"
 
 
+# Per-style wrapper pools for template_captions, picked deterministically per
+# clip (crc32 of the facts) so reruns of one clip are stable while different
+# clips vary. Wrappers may joke about the video-as-artifact only — never add
+# on-screen claims, since the subject phrase is the only footage-derived part.
+_TEMPLATE_VARIANTS = {
+    "sarcastic": (
+        "Oh look: {lower}. Groundbreaking content, truly.",
+        "Ah yes, {lower} — exactly the thrill ride the internet was missing.",
+        "Hold the applause: {lower}. Cinema may never recover.",
+    ),
+    "humorous_tech": (
+        "Status update: {lower} — everything running smoothly, zero crashes reported.",
+        "Deploy log: {lower}. Zero bugs found, which is more than most software can claim.",
+        "System notification: {lower} — buffering complete, drama still loading.",
+    ),
+    "humorous_non_tech": (
+        "And in today's episode of things that happened: {lower}.",
+        "Witnessed today, entirely free of charge: {lower}.",
+        "Somewhere out there, someone filmed this so we didn't have to: {lower}.",
+    ),
+}
+
+
 def template_captions(facts: str, styles: list) -> dict:
     """Deterministic captions built straight from the grounding facts.
 
     Last rung of the ladder before generic captions — used when the styling
-    model is unavailable or the clip is out of time budget. Factual first,
-    lightly voiced per style.
+    model is unavailable or the clip is out of time budget. Formal carries
+    the most facts; the voiced styles wrap the subject in one of a few
+    style-distinct framings.
     """
     subject = _facts_subject(facts)
     upper = subject[0].upper() + subject[1:]
     lower = subject[0].lower() + subject[1:]
-    templates = {
-        "formal": f"{upper}.",
-        "sarcastic": f"Oh look: {lower}. Groundbreaking content, truly.",
-        "humorous_tech": (f"Status update: {lower} — everything running "
-                          "smoothly, zero crashes reported."),
-        "humorous_non_tech": (f"And in today's episode of things that "
-                              f"happened: {lower}."),
-    }
-    return {s: templates.get(s, f"{upper}.") for s in styles}
+    # Facts like "The clip takes place at night..." survive the lead-in strip
+    # noun and all; inside a voiced wrapper ("Oh look: the clip takes place
+    # ...") that reads broken, so voiced styles swap the clip-noun opener for
+    # a natural one. Formal keeps the original phrasing.
+    voiced = _FACTS_CLIP_NOUN.sub("the whole thing ", lower)
+
+    # Formal is the informative one: append the second facts sentence when it
+    # fits, so it reads like a news-style caption rather than a stub.
+    formal = f"{upper}."
+    sentences = [s.strip() for s in facts.strip().split(". ") if s.strip()]
+    if len(sentences) > 1:
+        second = sentences[1].rstrip(".")
+        if second and len(formal) + len(second) + 2 <= 220:
+            formal = f"{formal} {second[0].upper()}{second[1:]}."
+
+    variant = zlib.crc32(facts.strip().encode("utf-8"))
+    captions = {}
+    for s in styles:
+        pool = _TEMPLATE_VARIANTS.get(s)
+        if pool:
+            captions[s] = pool[variant % len(pool)].format(lower=voiced)
+        elif s == "formal":
+            captions[s] = formal
+        else:
+            captions[s] = f"{upper}."
+    return captions
 
 
 def process_task(task: dict) -> tuple:
@@ -311,7 +383,7 @@ def process_task(task: dict) -> tuple:
         meta["timings"]["download_s"] = round(time.monotonic() - t0, 1)
         meta["video_bytes"] = size
 
-        duration = probe_duration(video_path)
+        duration = probe_duration(video_path, deadline)
         meta["duration_s"] = round(duration, 1)
 
         t1 = time.monotonic()
@@ -362,7 +434,8 @@ def process_task(task: dict) -> tuple:
     # Only attempted with clean LLM drafts and budget to spare; any failure
     # keeps the drafts.
     meta["style_thinking"] = False
-    if not still_missing and deadline - time.monotonic() >= STYLE_REFINE_MIN_BUDGET:
+    refine_budget = deadline - time.monotonic()
+    if not still_missing and refine_budget >= STYLE_REFINE_MIN_BUDGET:
         t4 = time.monotonic()
         try:
             captions = refine_captions(facts, captions, styles, deadline)
@@ -371,6 +444,9 @@ def process_task(task: dict) -> tuple:
             log.info("Task %s: refinement pass skipped/failed (%s); keeping drafts",
                      meta["task_id"], e)
         meta["timings"]["refine_s"] = round(time.monotonic() - t4, 1)
+    elif not still_missing:
+        log.info("Task %s: refinement skipped - %.1fs of budget left (needs >= %.0fs)",
+                 meta["task_id"], refine_budget, STYLE_REFINE_MIN_BUDGET)
 
     meta["timings"]["total_s"] = round(time.monotonic() - t0, 1)
     return captions, meta

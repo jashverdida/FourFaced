@@ -65,15 +65,20 @@ def process_tasks(tasks: list) -> tuple:
         try:
             captions, meta = pipeline.process_task(task)
             meta["fallback_used"] = bool(meta.get("template_styles"))
-        except Exception:
+        except Exception as e:
             # Pipeline failed before grounding produced facts (download,
             # ffmpeg, or grounding itself) — generic captions, never a gap.
             log.exception("Task %s failed; emitting generic fallback captions", task_id)
             captions = fallback_captions(styles)
             meta["fallback_used"] = True
             meta["last_resort"] = True
-        log.info("Task %s done in %.1fs (%d styles)",
-                 task_id, time.monotonic() - started, len(captions))
+            meta["error"] = f"{type(e).__name__}: {e}"
+        elapsed = time.monotonic() - started
+        log.info("Task %s done in %.1fs (%d styles)", task_id, elapsed, len(captions))
+        if elapsed >= 0.8 * pipeline.PER_CLIP_BUDGET:
+            log.warning("Task %s took %.1fs - %d%% of the %.0fs clip budget; "
+                        "investigate if this recurs", task_id, elapsed,
+                        100 * elapsed / pipeline.PER_CLIP_BUDGET, pipeline.PER_CLIP_BUDGET)
         results.append({"task_id": task_id, "captions": captions})
         debug.append(meta)
         # Persist after every task so a crash or global timeout mid-batch
@@ -120,6 +125,23 @@ def main() -> int:
         return 1
 
     results, debug = process_tasks(tasks)
+
+    # Caption-source summary: the pre-submission health check. "Fully styled"
+    # is the real pipeline output; anything else is a fallback rung and gets
+    # a per-task warning with the reason.
+    styled = [d for d in debug if d.get("facts") and not d.get("template_styles")]
+    templated = [d for d in debug if d.get("facts") and d.get("template_styles")]
+    generic = [d for d in debug if not d.get("facts")]
+    summary_log = log.info if not templated and not generic else log.warning
+    summary_log("Caption sources: %d/%d fully styled, %d template-styled "
+                "(grounded facts, styling fell back), %d generic (grounding failed)",
+                len(styled), len(debug), len(templated), len(generic))
+    for d in templated:
+        log.warning("Task %s: grounded, but styling fell back to facts template "
+                    "for %s", d.get("task_id"), d.get("template_styles"))
+    for d in generic:
+        log.warning("Task %s: NO grounding - generic captions. Cause: %s",
+                    d.get("task_id"), d.get("error", "see traceback above"))
 
     try:
         write_json(OUTPUT_PATH, results)

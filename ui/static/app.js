@@ -19,6 +19,33 @@
   const styleToggles = $("styleToggles"), runBtn = $("runBtn");
   const progressBlock = $("progressBlock"), progressCurrent = $("progressCurrent"), stageLog = $("stageLog");
   const errorBox = $("errorBox"), results = $("results"), resultMeta = $("resultMeta");
+  const healthBanner = $("healthBanner");
+
+  // Model-API health banner: polls the server's read-only /api/health and
+  // shows/clears itself as the pipeline's own calls fail or recover. Purely
+  // informational — it never gates any action.
+  function renderHealth(h) {
+    if (!healthBanner) return;
+    if (h.status === "ok") {
+      healthBanner.classList.remove("visible", "limited");
+      return;
+    }
+    const age = h.seconds_since_error != null
+      ? ` · last error ${Math.round(h.seconds_since_error)}s ago` : "";
+    healthBanner.textContent = (h.status === "limited"
+      ? "⚠ Gemini API rate limit reached — captions may fall back to simpler results until it recovers"
+      : "⚠ Gemini is experiencing issues right now — captions may fall back to simpler results until it recovers") + age;
+    healthBanner.classList.toggle("limited", h.status === "limited");
+    healthBanner.classList.add("visible");
+  }
+  async function pollHealth() {
+    try {
+      const res = await fetch("/api/health");
+      if (res.ok) renderHealth(await res.json());
+    } catch (e) { /* server unreachable; leave the banner as-is */ }
+  }
+  setInterval(pollHealth, 10000);
+  pollHealth();
   const cardGrid = $("cardGrid"), evidenceFacts = $("evidenceFacts"), evidenceFlags = $("evidenceFlags");
   const resultClipName = $("resultClipName");
   const themeToggle = $("themeToggle");
@@ -529,8 +556,10 @@
         setSignalState("splitting");
         progressCurrent.innerHTML = `<span class="dot"></span> ${prefix}Done in ${data.total_s ?? "?"}s`;
         renderFocusedResults();
+        pollHealth();
       } catch (err) {
         setClipStatus(clip, "error", err.message);
+        pollHealth();
         if (err.fatal) {
           showError(err.message);
           break;
@@ -609,14 +638,21 @@
     resultClipName.textContent = clips.length > 1 ? ` — ${clip.name}` : "";
 
     resultMeta.innerHTML = "";
+    const budget = data.budget_s;
+    let totalCls = "";
+    if (budget && data.total_s != null) {
+      if (data.total_s >= budget) totalCls = "budget-over";
+      else if (data.total_s >= 0.8 * budget) totalCls = "budget-warn";
+    }
     const metaItems = [
       data.duration_s != null ? [`Clip length`, `${data.duration_s}s`] : null,
       [`Frames sampled`, data.frame_count],
-      [`Total run`, `${data.total_s ?? "?"}s`],
+      [`Total run`, `${data.total_s ?? "?"}s${budget ? ` / ${budget}s budget` : ""}`, totalCls],
       [`Refinement pass`, data.style_thinking ? "completed" : "skipped (budget)"],
     ].filter(Boolean);
-    metaItems.forEach(([label, val]) => {
+    metaItems.forEach(([label, val, cls]) => {
       const span = document.createElement("span");
+      if (cls) span.className = cls;
       span.innerHTML = `${label}: <b>${val}</b>`;
       resultMeta.appendChild(span);
     });
@@ -727,8 +763,14 @@
 
     evidenceFlags.innerHTML = "";
     const flags = [];
-    if (data.template_styles && data.template_styles.length)
-      flags.push([`fallback used: ${data.template_styles.join(", ")}`, true]);
+    if (data.template_styles && data.template_styles.length) {
+      // Two very different rungs: with facts, captions are still derived
+      // from the real footage (only the styling LLM call fell back); without
+      // facts, they are generic and say nothing about this clip.
+      flags.push([data.facts
+        ? `grounded, but styling fell back to facts-template for: ${data.template_styles.join(", ")}`
+        : `generic fallback captions (no grounding): ${data.template_styles.join(", ")}`, true]);
+    }
     if (data.strict_retry) flags.push([`strict JSON retry used`, false]);
     if (data.style_thinking) flags.push([`Gemma self-check completed`, false]);
     if (data.error) flags.push([`error: ${data.error}`, true]);
@@ -785,18 +827,21 @@
   }
   function openManual() {
     manualOverlay.hidden = false;
+    document.body.style.overflow = "hidden"; // freeze the page behind
     manualSettle();
     document.addEventListener("keydown", manualKeydown);
     manualClose.focus();
   }
   function closeManual() {
     manualOverlay.hidden = true;
+    document.body.style.overflow = "";
     document.removeEventListener("keydown", manualKeydown);
     manualBtn.focus();
   }
 
   manualBtn.addEventListener("click", openManual);
   manualClose.addEventListener("click", closeManual);
+  if (location.hash === "#manual") openManual(); // deep link, also used by layout tests
   manualBackdrop.addEventListener("click", closeManual);
   manualNext.addEventListener("click", () => manualFlip(1));
   manualPrev.addEventListener("click", () => manualFlip(-1));
