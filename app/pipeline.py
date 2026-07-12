@@ -186,10 +186,12 @@ def ground(frames: list, duration: float, deadline: float) -> str:
         "Do not guess or embellish — omit anything ambiguous. Refer to it as "
         '"the clip" and never mention frames or images.'
     )
-    contents = [prompt]
+    # Images must precede the text prompt for Gemma's vision parser.
+    contents = []
     for f in frames:
         with open(f, "rb") as fh:
             contents.append(types.Part.from_bytes(data=fh.read(), mime_type="image/jpeg"))
+    contents.append(prompt)
     return llm.generate(
         GROUND_MODEL,
         contents,
