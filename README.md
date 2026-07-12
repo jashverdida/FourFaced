@@ -3,26 +3,29 @@
 *One clip. Four faces. Every caption backed by what's actually on screen.*
 
 FourFaced is Team VERPTO's submission for **Track 2: Video Captioning** of the
-**AMD Developer Hackathon: ACT II**. Given a batch of video clips, it generates
-a caption for each clip in each requested style (`formal`, `sarcastic`,
-`humorous_tech`, `humorous_non_tech`) using a two-stage, all-Gemma pipeline:
+**AMD Developer Hackathon: ACT II**. It is a containerized batch-processing
+engine: it reads a list of video tasks from `/input/tasks.json`, runs a
+two-stage, all-Gemma vision-and-language pipeline for each clip, and writes
+the final captions to `/output/results.json` before exiting.
 
-1. **Grounding** — sampled video frames go to a Fireworks-hosted Gemma 4 vision
-   model, which returns a plain, factual description of what is actually on
-   screen.
+The pipeline:
+
+1. **Grounding** — sampled video frames go to a Gemma 4 vision model, which
+   returns a plain, factual description of what is actually on screen.
 2. **Styling** — that grounded description goes back to Gemma 4, which drafts
-   the captions in every requested style, checks its own drafts against the
-   grounding facts to remove hallucinated details, and returns the final
-   captions.
+   the captions in every requested style (`formal`, `sarcastic`,
+   `humorous_tech`, `humorous_non_tech`) and checks them against the grounding
+   facts to remove hallucinated details.
 
 Gemma 4 runs the *entire* pipeline — vision grounding and styling — never split
 across model providers.
 
-> **Status: Phase 2 (real pipeline).** The full Gemma 4 pipeline is live:
-> frames are sampled with ffmpeg, grounded and styled by `gemma-4-31b-it` on
-> the Gemini API, with per-clip time budgets and safe fallbacks throughout.
+> **Important:** This container is a **batch processor**, not a web server. It
+> does not expose any port and does not run a persistent HTTP service. Judges
+> should run it with volume mounts and an API key, then inspect the output
+> file.
 
-## Contract
+## Input / output contract
 
 The container reads `/input/tasks.json`:
 
@@ -52,30 +55,31 @@ and writes `/output/results.json` before exiting 0:
 ]
 ```
 
-## Build
+## Pull the official image
 
 ```sh
-docker buildx build --platform linux/amd64 --tag fourfaced:latest .
+docker pull eijay/fourfaced:final-submission
 ```
 
-(Add `--push` and a registry tag when publishing for submission.)
+## Run the container
 
-## Run
+Because this is a batch processor, **no port mapping (`-p`) is required**.
+Mount your input directory, an output directory, and pass a valid
+`GEMINI_API_KEY`:
 
 ```sh
 docker run --rm \
+  --platform linux/amd64 \
   -v /path/to/input:/input:ro \
   -v /path/to/output:/output \
-  -e GEMINI_API_KEY=your-key-here \
-  fourfaced:latest
+  -e GEMINI_API_KEY=<your-key> \
+  eijay/fourfaced:final-submission
 ```
 
-`/path/to/input` must contain a `tasks.json`; results appear at
+`/path/to/input` must contain a `tasks.json`. Results appear at
 `/path/to/output/results.json`.
 
 ### Environment variables
-
-Copy `.env.example` to `.env` for local use. Never commit a real key.
 
 | Variable | Purpose | Default |
 |---|---|---|
@@ -83,6 +87,21 @@ Copy `.env.example` to `.env` for local use. Never commit a real key.
 | `GROUND_MODEL` | Vision-grounding model | `gemma-4-31b-it` |
 | `STYLE_MODEL` | Caption-styling model | `gemma-4-31b-it` |
 | `PER_CLIP_BUDGET` | Per-clip wall-clock budget (seconds) | `27` |
+
+## Demo application
+
+For a visual UI demonstration of the same pipeline, visit our live Vercel app:
+
+**[https://four-faced-demo.vercel.app/](https://four-faced-demo.vercel.app/)**
+
+The demo page is a static presentation of the FourFaced interface. The
+judging container itself is the batch processor described above.
+
+## Build locally
+
+```sh
+docker buildx build --platform linux/amd64 --tag fourfaced:latest .
+```
 
 ## Test locally
 
@@ -132,23 +151,6 @@ Output (`results.json`) — real pipeline output:
 Alongside `results.json`, the container writes `fourfaced_debug.json` with the
 grounding facts, stage timings, and fallback flags per clip — the evidence
 behind every caption (the grading harness only reads `results.json`).
-
-## Results UI
-
-A local web UI for demoing the pipeline: drop in a clip (or pick one of the
-three official examples), watch real progress as it moves through grounding
-and styling, then see all four captions — each in its own typographic voice —
-next to the actual grounding facts that back them. Not part of the submission
-container; it's a separate Flask app that imports and runs the exact same
-`app/pipeline.py` code.
-
-```sh
-pip install -r ui/requirements.txt
-python ui/server.py
-```
-
-Open `http://localhost:5000`. Reads `GEMINI_API_KEY` the same way the
-container does (repo-root `.env`, or export it in your shell).
 
 ## Known limitations
 

@@ -8,8 +8,8 @@ Gemma 4 on the Gemini API only exposes two thinkingLevel values: "minimal"
 short text-only prompts). There is no bounded middle ground, so callers pick
 a level rather than a token budget.
 """
-
 import logging
+import os
 import threading
 import time
 
