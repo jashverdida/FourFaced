@@ -9,6 +9,7 @@ One clip. Four faces. Every caption backed by what's actually on screen.
 import json
 import logging
 import os
+import random
 import sys
 import time
 
@@ -36,17 +37,34 @@ OUTPUT_PATH = os.environ.get("OUTPUT_PATH", "/output/results.json")
 log = logging.getLogger("fourfaced")
 
 # Last-resort captions when the pipeline fails before grounding produced any
-# facts. Deliberately generic — never tuned to specific clip content.
-LAST_RESORT = {
-    "formal": "A short video clip depicting a scene recorded on camera.",
-    "sarcastic": "Ah yes, another video clip. Riveting stuff, truly.",
-    "humorous_tech": "This clip loaded faster than my last software update, and that's saying something.",
-    "humorous_non_tech": "A video so mysterious even the person who filmed it is probably still confused.",
-}
+# facts. Deliberately generic — never tuned to specific clip content. Three
+# full sets so back-to-back failures in one batch don't emit byte-identical
+# captions for unrelated clips.
+LAST_RESORT_SETS = (
+    {
+        "formal": "A short video clip depicting a scene recorded on camera.",
+        "sarcastic": "Ah yes, another video clip. Riveting stuff, truly.",
+        "humorous_tech": "This clip loaded faster than my last software update, and that's saying something.",
+        "humorous_non_tech": "A video so mysterious even the person who filmed it is probably still confused.",
+    },
+    {
+        "formal": "A brief video recording showing an unspecified scene.",
+        "sarcastic": "Groundbreaking: a video clip exists. Someone alert the press.",
+        "humorous_tech": "This clip is currently 404: content not found, please try again later.",
+        "humorous_non_tech": "A video so uneventful even the narrator gave up halfway through.",
+    },
+    {
+        "formal": "A short segment of footage captured on video.",
+        "sarcastic": "Truly a cinematic triumph, this video clip. Riveting.",
+        "humorous_tech": "Rendering incomplete — this caption is running on a fallback build.",
+        "humorous_non_tech": "Whatever happened here, it happened off-screen from this caption.",
+    },
+)
 
 
 def fallback_captions(styles: list) -> dict:
-    return {s: LAST_RESORT.get(s, "A short video clip.") for s in styles}
+    chosen = random.choice(LAST_RESORT_SETS)
+    return {s: chosen.get(s, "A short video clip.") for s in styles}
 
 
 def process_tasks(tasks: list) -> tuple:

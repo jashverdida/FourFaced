@@ -9,13 +9,13 @@ import json
 import logging
 import math
 import os
+import random
 import re
 import shutil
 import subprocess
 import tempfile
 import time
 import urllib.parse
-import zlib
 
 import requests
 from google.genai import types
@@ -56,7 +56,10 @@ def task_styles(task: dict) -> list:
 STYLE_GUIDES = {
     "formal": (
         "Polished, professional, neutral — like a caption under a photo in a "
-        "news article or documentary. No jokes, no slang, no exclamation points."
+        "news article or documentary. No jokes, no slang, no exclamation points. "
+        "Retain at least 2-3 concrete visual details from the facts (specific "
+        "clothing, objects, setting, or background actions) — do not compress "
+        "to a vague one-clause summary."
     ),
     "sarcastic": (
         "Dry, deadpan, mocking wit. Technically true to the clip, but clearly "
@@ -352,25 +355,32 @@ def _facts_subject(facts: str, max_len: int = 140) -> str:
     return sentence or "a short scene recorded on camera"
 
 
-# Per-style wrapper pools for template_captions, picked deterministically per
-# clip (crc32 of the facts) so reruns of one clip are stable while different
-# clips vary. Wrappers may joke about the video-as-artifact only — never add
-# on-screen claims, since the subject phrase is the only footage-derived part.
+# Per-style wrapper pools for template_captions, picked at random per call so
+# repeated fallbacks (even on the same clip) don't read byte-identical to each
+# other or to a different clip's fallback. Wrappers may joke about the
+# video-as-artifact only — never add on-screen claims, since the subject
+# phrase is the only footage-derived part.
 _TEMPLATE_VARIANTS = {
     "sarcastic": (
         "Oh look: {lower}. Groundbreaking content, truly.",
         "Ah yes, {lower} — exactly the thrill ride the internet was missing.",
         "Hold the applause: {lower}. Cinema may never recover.",
+        "Riveting stuff: {lower}. Someone alert the film festivals.",
+        "Breaking news, apparently: {lower}. The suspense was unbearable.",
     ),
     "humorous_tech": (
         "Status update: {lower} — everything running smoothly, zero crashes reported.",
         "Deploy log: {lower}. Zero bugs found, which is more than most software can claim.",
         "System notification: {lower} — buffering complete, drama still loading.",
+        "Changelog v1.0: {lower}. No breaking changes, surprisingly.",
+        "Server logs show: {lower} — latency normal, hype levels overclocked.",
     ),
     "humorous_non_tech": (
         "And in today's episode of things that happened: {lower}.",
         "Witnessed today, entirely free of charge: {lower}.",
         "Somewhere out there, someone filmed this so we didn't have to: {lower}.",
+        "Breaking: local camera captures {lower}, neighbors unsurprised.",
+        "Plot twist nobody asked for: {lower}.",
     ),
 }
 
@@ -401,12 +411,11 @@ def template_captions(facts: str, styles: list) -> dict:
         if second and len(formal) + len(second) + 2 <= 220:
             formal = f"{formal} {second[0].upper()}{second[1:]}."
 
-    variant = zlib.crc32(facts.strip().encode("utf-8"))
     captions = {}
     for s in styles:
         pool = _TEMPLATE_VARIANTS.get(s)
         if pool:
-            captions[s] = pool[variant % len(pool)].format(lower=voiced)
+            captions[s] = random.choice(pool).format(lower=voiced)
         elif s == "formal":
             captions[s] = formal
         else:
